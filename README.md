@@ -25,6 +25,13 @@ su -
 
 ## Prerequisites
 
+* Internet Access - Make sure that you can run `ping -c4 google.com` or `dig +search +noall +answer google.com` from the VM to make sure that Internet access is available. 
+    ```
+    $ dig +search +noall +answer google.com
+    google.com.		163	IN	A	172.217.15.78
+    ```
+    If ping does not succeed, it is quite possible that the network address of VMnet8 adapter needs to be fixed. Refer to [this](docs/vmnet.md) link for instructions to fix `vmnet8` subnet address in VMware.
+
 * Install `socat` - For Helm, `socat` is used to set the port forwarding for both the Helm client and Tiller.
     ```
     yum -y install socat
@@ -40,25 +47,17 @@ su -
     yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
     ```
 
-* Install docker. We will not install lateset version of docker - which is 18.09 and this version is not compatible with the Kubernetes version `1.12.10-0`. We will install Docker `18.06.3.ce-3.el7`
+* Install docker. At the time of writing, the lateset version of docker is 3:18.09.8-3.el7. The latest version could be different in your case.
 
 * Tip: Find out available version using `yum --showduplicates list docker-ce`
 
     ```
-    yum -y install docker-ce-18.06.3.ce-3.el7
+    yum -y install docker-ce-18.09.8-3.el7.x86_64
     systemctl enable docker
     systemctl start docker
     ```
 
 * Optionally: Configure a separate disk to mount `/var/lib/doocker` and restart docker.
-
-* Internet Access - Make sure that you can run `ping -c4 google.com` or `dig +search +noall +answer google.com` from the VM to make sure that Internet access is available. 
-    ```
-    $ dig +search +noall +answer google.com
-    google.com.		163	IN	A	172.217.15.78
-    ```
-    If ping does not succeed, it is quite possible that the network address of VMnet8 adapter needs to be fixed. Refer to [this](docs/vmnet.md) link for instructions to fix `vmnet8` subnet address in VMware.
-
 
 ## Build Kubernetes using one VM
 
@@ -94,7 +93,7 @@ EOF
 
 ### Install Kubernetes 
 
-At the time of this writing, Kubernetes 1.15.1 is available but we will go with the latest version in 1.12 series.
+At the time of this writing, Kubernetes 1.15.1 is the latest version and this could be different in your case.
 
 Check available versions of a packages
 
@@ -102,10 +101,10 @@ Check available versions of a packages
 yum --showduplicates list kubeadm
 ```
 
-And, select the version that we need. For example, we are selecting `1.12.10-0`.
+And, select the version that we need. For example, we are selecting `1.15.1-0`.
 
 ```
-version=1.12.10-0
+version=1.15.1-0
 yum install -y kubelet-$version kubeadm-$version kubectl-$version
 ```
 
@@ -178,6 +177,14 @@ sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
 sudo chown $(id -u):$(id -g) $HOME/.kube/config
 ```
 
+Check Kubernetes version
+
+```
+$ kubectl version --short
+Client Version: v1.15.1
+Server Version: v1.15.1
+```
+
 Untaint the node - this is required since we have only one VM to install objects.
 
 ```
@@ -237,11 +244,11 @@ Our single node basic Kubernetes cluster is now up and running.
 ```
 $ kubectl get nodes -o wide
 NAME    STATUS   ROLES    AGE     VERSION    INTERNAL-IP       ---
-osc01   Ready    master   5m28s   v1.12.10   192.168.142.101   ---
+osc01   Ready    master   5m28s   v1.15.0    192.168.142.101   ---
 
 
 --- EXTERNAL-IP   OS-IMAGE                KERNEL-VERSION               CONTAINER-RUNTIME
---- <none>        CentOS Linux 7 (Core)   3.10.0-957.21.3.el7.x86_64   docker://18.6.3
+--- <none>        CentOS Linux 7 (Core)   3.10.0-957.21.3.el7.x86_64   docker://18.9.8
 ```
 
 ## Create an admin account
@@ -261,6 +268,19 @@ kubectl create clusterrolebinding admin --serviceaccount=kube-system:admin --clu
 We will use the existing VM - which already has `kubectl` and the GUI to run a browser. 
 
 However, you can use `kubectl` from a client machine to manage the Kubernetes environment. Follow the [link](https://kubernetes.io/docs/tasks/tools/install-kubectl/) for installing `kubectl` on your chice of client machine (Windows, MacBook or Linux). 
+
+## Install busybox to check
+
+```
+kubectl create -f https://k8s.io/examples/admin/dns/busybox.yaml
+```
+
+Check pod
+```
+$ kubectl get pods
+NAME      READY   STATUS    RESTARTS   AGE
+busybox   1/1     Running   0          13s
+```
 
 ## Install helm and tiller
 
@@ -285,6 +305,7 @@ Create `tiller` service accoun and grant cluster admin to the `tiller` service a
 
 ```
 kubectl -n kube-system create serviceaccount tiller
+
 kubectl create clusterrolebinding tiller --clusterrole cluster-admin --serviceaccount=kube-system:tiller
 ```
 
@@ -298,6 +319,7 @@ Check helm version
 
 ```
 helm version --short
+
 Client: v2.14.2+ga8b13cc
 Server: v2.14.2+ga8b13cc
 ```
@@ -395,9 +417,31 @@ kube-dns        ClusterIP   10.96.0.10       <none>       53/UDP,53/TCP   3h2m
 tiller-deploy   ClusterIP   10.98.111.98     <none>       44134/TCP       38m
 ```
 
+Check the internal DNS server
+
+```
+kubectl exec -it busybox -- cat /etc/resolv.conf
+
+nameserver 10.96.0.10
+search default.svc.cluster.local svc.cluster.local cluster.local servicemesh.local
+options ndots:5
+```
+
+Internal service name resolution.
+
+```
+kubectl exec -it busybox -- nslookup dashboard.kube-system.svc.cluster.local
+
+Server:    10.96.0.10
+Address 1: 10.96.0.10 kube-dns.kube-system.svc.cluster.local
+
+Name:      dashboard.kube-system.svc.cluster.local
+Address 1: 10.106.11.211 dashboard.kube-system.svc.cluster.local
+```
+
 ### Get authentication token
 
-Create a `~/.kube` directory on your client machine and then scp the `~/.kube/config` file from the Kubernetes master to your `~/.kube` directory.
+If you need to access Kubernetes environment remotely, create a `~/.kube` directory on your client machine and then scp the `~/.kube/config` file from the Kubernetes master to your `~/.kube` directory.
 
 Run this on the Kubernetes master node
 
