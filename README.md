@@ -121,6 +121,13 @@ systemctl disable firewalld
 systemctl stop firewalld
 ```
 
+If you do not want to disable firewall, you may need to open ports through the firewall. For Kubernetes, these two ports are required.
+
+```
+firewall-cmd --zone=public --add-port=6443/tcp --permanent
+firewall-cmd --zone=public --add-port=10250/tcp --permanent
+```
+
 #### Disable swap
 
 Kuberenets does not like swap to be on.
