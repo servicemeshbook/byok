@@ -439,6 +439,19 @@ Name:      dashboard.kube-system.svc.cluster.local
 Address 1: 10.106.11.211 dashboard.kube-system.svc.cluster.local
 ```
 
+Edit VM's `/etc/resolv.conf` to add Kubernetes DNS server
+
+```
+vi /etc/resolv.conf
+```
+
+The additional two lines added for name resolution of Kubernetes services
+
+```
+search cluster.local
+nameserver 10.96.0.10
+```
+
 ### Get authentication token
 
 If you need to access Kubernetes environment remotely, create a `~/.kube` directory on your client machine and then scp the `~/.kube/config` file from the Kubernetes master to your `~/.kube` directory.
