@@ -289,7 +289,7 @@ NAME      READY   STATUS    RESTARTS   AGE
 busybox   1/1     Running   0          13s
 ```
 
-## Install helm and tiller
+## Install helm and tiller 
 
 Starting with Helm 3, the tiller will not be required. However, we will be installing Helm v2.14.2
 
@@ -316,6 +316,8 @@ kubectl -n kube-system create serviceaccount tiller
 kubectl create clusterrolebinding tiller --clusterrole cluster-admin --serviceaccount=kube-system:tiller
 ```
 
+### Option - 1 : No security
+
 Initialize the `helm` and it will install `tiller` server in Kubernetes.
 
 ```
@@ -331,12 +333,48 @@ Client: v2.14.2+ga8b13cc
 Server: v2.14.2+ga8b13cc
 ```
 
+### Option - 2 : With TLS security
+
+Install step
+
+```
+$ curl -LOs https://github.com/smallstep/cli/releases/download/v0.10.1/step_0.10.1_linux_amd64.tar.gz
+
+$ tar xvfz step_0.10.1_linux_amd64.tar.gz
+
+$ sudo mv step_0.10.1/bin/step /bin
+
+$ mkdir -p ~/helm
+$ cd ~/helm
+$ step certificate create --profile root-ca "My iHelm Root CA" root-ca.crt root-ca.key
+$ step certificate create intermediate.io inter.crt inter.key --profile intermediate-ca --ca ./root-ca.crt --ca-key ./root-ca.key
+$ step certificate create helm.io helm.crt helm.key --profile leaf --ca inter.crt --ca-key inter.key --no-password --insecure --not-after 17520h
+$ step certificate bundle root-ca.crt inter.crt ca-chain.crt
+
+$ helm init \
+--override 'spec.template.spec.containers[0].command'='{/tiller,--storage=secret}' \
+--tiller-tls --tiller-tls-verify \
+--tiller-tls-cert=./helm.crt \
+--tiller-tls-key=./helm.key \
+--tls-ca-cert=./ca-chain.crt \
+--service-account=tiller
+
+$ cd ~/.helm
+$ cp ~/helm/helm.crt cert.pem
+$ cp ~/helm/helm.key key.pem
+$ rm -fr ~/helm ## Copy dir somewhere and protect it.
+```
+
+If secure helm is used, use --tls at the end of helm commands to use TLS between helm and server.
+
 ## Install Kubernetes dashboard
 
 Install kubernetes dashboard helm chart
 
 ```
 helm install stable/kubernetes-dashboard --name k8web --namespace kube-system
+
+Note: add --tls above if using secure helm
 ```
 
 ```
@@ -386,6 +424,8 @@ For example, if we want to change the name `k8web-kubernetes-dashboard` to just 
 
 ```
 helm upgrade k8web stable/kubernetes-dashboard --set fullnameOverride="dashboard"
+
+Note: add --tls above if using secure helm
 ```
 
 Check service again
@@ -512,6 +552,8 @@ This is optional if we do not have enough resources in the VM to deploy addition
 
 ```
 helm install stable/prometheus-operator --namespace monitoring --name mon
+
+Note: add --tls above if using secure helm
 ```
 
 Check monitoring pods
@@ -600,6 +642,27 @@ kubectl -n kube-system delete crd \
            prometheuses.monitoring.coreos.com \
            prometheusrules.monitoring.coreos.com \
            servicemonitors.monitoring.coreos.com
+
+Note: add --tls above if using secure helm
+```
+
+## Uninstall Kubernetes
+
+In case Kuberenetes needs to be uninstalled.
+
+Find out node name using `kubectl get nodes`
+
+```
+kubectl drain <node name> — delete-local-data — force — ignore-daemonsets
+kubectl delete node <node name>
+```
+
+Remove kubeadm
+
+```
+# yum remove kubeadm kubectl kubelet kubernetes-cni kube*
+
+# rm -fr ~/.kube
 ```
 
 ## Power down VM
