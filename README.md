@@ -365,7 +365,22 @@ $ cp ~/helm/helm.key key.pem
 $ rm -fr ~/helm ## Copy dir somewhere and protect it.
 ```
 
+Update Helm repo
+
+```
+$ helm repo update
+```
+
 If secure helm is used, use --tls at the end of helm commands to use TLS between helm and server.
+
+List Helm repo
+
+```
+$ helm repo list
+NAME  	URL                                             
+stable	https://kubernetes-charts.storage.googleapis.com
+local 	http://127.0.0.1:8879/charts   
+```
 
 ## Install Kubernetes dashboard
 
