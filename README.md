@@ -1,5 +1,8 @@
 # Build your own Kubernetes cluster in a single VM
 
+Version Tested: kubeadm.x86_64 1.16.0-0
+Compatible Docker Driver : 3:18.09.9-3.el7 
+
 This guide is based upon a medium [article](https://medium.com/@salqadri/build-your-own-multi-node-kubernetes-cluster-with-monitoring-346a7e2ef6e2) written by `Syed Salman Qadri`
 
 Another read on building your own Kubernetes is at this [link](https://dmtn-071.lsst.io/).
@@ -47,11 +50,29 @@ su -
     yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
     ```
 
-* Install docker. At the time of writing, the lateset version of docker is 3:18.09.8-3.el7. The latest version could be different in your case.
+* Install docker. At the time of writing, the version of docker is 3:18.09.8-3.el7 which is supported for the version of kubeadm used here. The latest version could be different in your case.
+
+* Switch cgroup driver from cgroupfs to systemd
+
+  Recommended `/etc/docker/daemon.json` to switch `cgroup` driver to `systemd`
+
+```
+cat > /etc/docker/daemon.json <<EOF
+{
+  "exec-opts": ["native.cgroupdriver=systemd"],
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "100m"
+  },
+  "storage-driver": "overlay2"
+}
+EOF
+```
 
 * Tip: Find out available version using `yum --showduplicates list docker-ce`
 
     ```
+    yum -y install docker-ce-cli-18.09.8-3.el7.x86_64
     yum -y install docker-ce-18.09.8-3.el7.x86_64
     systemctl enable docker
     systemctl start docker
@@ -101,10 +122,10 @@ Check available versions of a packages
 yum --showduplicates list kubeadm
 ```
 
-And, select the version that we need. For example, we are selecting `1.15.1-0`.
+And, select the version that we need. For example, we are selecting `1.16.0-0`.
 
 ```
-version=1.15.1-0
+version=1.16.0-0
 yum install -y kubelet-$version kubeadm-$version kubectl-$version
 ```
 
@@ -154,7 +175,7 @@ The output is as shown:
 
 ```
 << removed >>
-Your Kubernetes master has initialized successfully!
+Your Kubernetes control-plane has initialized successfully!
 
 To start using your cluster, you need to run the following as a regular user:
 
@@ -166,10 +187,17 @@ You should now deploy a pod network to the cluster.
 Run "kubectl apply -f [podnetwork].yaml" with one of the options listed at:
   https://kubernetes.io/docs/concepts/cluster-administration/addons/
 
-You can now join any number of machines by running the following on each node
-as root:
+Then you can join any number of worker nodes by running the following on each as root:
 
-  kubeadm join 192.168.142.101:6443 --token lb9jf2.atnua0345uqti0xv --discovery-token-ca-cert-hash sha256:98207cf21789ee55caffa98fa13aa654b89902e8c9c162f52e7e7b513c0d88fb
+kubeadm join 192.168.100.107:6443 --token 77f6tv.4thqmep3r7havfuy \
+    --discovery-token-ca-cert-hash sha256:42741165b91a79536281743a3bb7a951937c472286dadb4364af04e2cb9c5a4f
+```
+
+If you loose above `kubeadm join` command, a new token and hash can be generated as:
+
+```
+# kubeadm token create --print-join-command
+kubeadm join 192.168.100.107:6443 --token e2pmel.16ulpy6moo1d88c5     --discovery-token-ca-cert-hash sha256:bdbfc6a4d415e95c3ea676552d712ff8422e5cdc49b74c7c3e92eab8d3621f37
 ```
 
 The important thing above is to copy/save the token that will be required to add additional nodes to the cluster. 
@@ -188,8 +216,8 @@ Check Kubernetes version
 
 ```
 $ kubectl version --short
-Client Version: v1.15.1
-Server Version: v1.15.1
+Client Version: v1.16.0
+Server Version: v1.16.0
 ```
 
 Untaint the node - this is required since we have only one VM to install objects.
@@ -203,7 +231,7 @@ Check node status and note that it is not yet ready since we have not yet instal
 ```
 $ kubectl get nodes
 NAME    STATUS     ROLES    AGE   VERSION
-osc01   NotReady   master   95s   v1.12.10
+osc01   NotReady   master   95s   v1.16.0
 ```
 
 Check pod status in `kube-system` and you will notice that `coredns` pods are in pending state since pod network has not yet been installed.
@@ -222,12 +250,12 @@ kube-scheduler-osc01            1/1     Running   0          81s
 
 ## Install Calico network for pods
 
-Choose proper version of Calico [Link](https://docs.projectcalico.org/v3.7/getting-started/kubernetes/requirements)
+Choose proper version of Calico [Link](https://docs.projectcalico.org/v3.9/getting-started/kubernetes/requirements)
 
-Calico 3.7 is tested with Kubernetes versions 1.12, 1.13 and 1.14
+Calico 3.9 is tested with Kubernetes versions 1.13, 1.14 and 1.15
 
 ```
-kubectl apply -f https://docs.projectcalico.org/v3.7/manifests/calico.yaml
+kubectl apply -f https://docs.projectcalico.org/v3.9/manifests/calico.yaml
 ```
 
 Check the status of the cluster and wait for all pods to be in `Running` and `Ready` state.
@@ -251,7 +279,7 @@ Our single node basic Kubernetes cluster is now up and running.
 ```
 $ kubectl get nodes -o wide
 NAME    STATUS   ROLES    AGE     VERSION    INTERNAL-IP       ---
-osc01   Ready    master   5m28s   v1.15.0    192.168.142.101   ---
+osc01   Ready    master   5m28s   v1.16.0    192.168.142.101   ---
 
 
 --- EXTERNAL-IP   OS-IMAGE                KERNEL-VERSION               CONTAINER-RUNTIME
@@ -291,7 +319,7 @@ busybox   1/1     Running   0          13s
 
 ## Install helm and tiller 
 
-Starting with Helm 3, the tiller will not be required. However, we will be installing Helm v2.14.2
+Starting with Helm 3, the tiller will not be required. However, we will be installing Helm v2.14.3
 
 In principle tiller can be installed using `helm init`.
 
@@ -302,7 +330,7 @@ su -
 ```
 
 ```
-curl -s https://storage.googleapis.com/kubernetes-helm/helm-v2.14.2-linux-amd64.tar.gz | tar xz
+curl -s https://storage.googleapis.com/kubernetes-helm/helm-v2.14.3-linux-amd64.tar.gz | tar xz
 
 cd linux-amd64
 mv helm /bin
@@ -316,21 +344,38 @@ kubectl -n kube-system create serviceaccount tiller
 kubectl create clusterrolebinding tiller --clusterrole cluster-admin --serviceaccount=kube-system:tiller
 ```
 
+Helm can be installed without and with security. If no security is required (like demo/test environment), follow Option - 1 or follow option - 2 to install helm with security.
+
 ### Option - 1 : No security
 
 Initialize the `helm` and it will install `tiller` server in Kubernetes.
+
+The following helm 2.14.3 will work for kubeadm version 1.15.0 or lower but will not work for kubeadm 1.16+ 
 
 ```
 helm init --service-account tiller
 ```
 
+For helm version 2.14.3, the `helm init --service-account tiller` will fail since it creates tiller deployment with `apiVersion: extensions/v1beta1` - which has been deprecated in Kubernetes 1.16.0.
+
+The workaround is to install tiller by modifying the deployment from using `apiVersion: extensions/v1beta1` to `apiVersion: apps/v1`.
+
+```
+helm init --service-account tiller --output yaml | \
+sed 's@apiVersion: extensions/v1beta1@apiVersion: apps/v1@' | \
+sed 's@  replicas: 1@  replicas: 1\n  selector: {"matchLabels": {"app": "helm", "name": "tiller"}}@' | \
+kubectl apply -f -
+```
+
+Note: When helm is updated - the above hacks may not be required for kubeadm 1.16.0. Refer to link: [https://github.com/helm/helm/issues/6374](https://github.com/helm/helm/issues/6374)
+ 
 Check helm version
 
 ```
 helm version --short
 
-Client: v2.14.2+ga8b13cc
-Server: v2.14.2+ga8b13cc
+Client: v2.14.3+g0e7f3b6
+Server: v2.14.3+g0e7f3b6
 ```
 
 ### Option - 2 : With TLS security
@@ -338,42 +383,61 @@ Server: v2.14.2+ga8b13cc
 Install step
 
 ```
-$ curl -LOs https://github.com/smallstep/cli/releases/download/v0.10.1/step_0.10.1_linux_amd64.tar.gz
+$ curl -LOs https://github.com/smallstep/cli/releases/download/v0.13.2/step_0.13.2_linux_amd64.tar.gz
 
-$ tar xvfz step_0.10.1_linux_amd64.tar.gz
+$ tar xvfz step_0.13.2_linux_amd64.tar.gz
 
-$ sudo mv step_0.10.1/bin/step /bin
+$ sudo mv step_0.13.2/bin/step /bin
 
 $ mkdir -p ~/helm
+
 $ cd ~/helm
-$ step certificate create --profile root-ca "My iHelm Root CA" root-ca.crt root-ca.key
+
+$ step certificate create --profile root-ca "My Helm Root CA" root-ca.crt root-ca.key
+
 $ step certificate create intermediate.io inter.crt inter.key --profile intermediate-ca --ca ./root-ca.crt --ca-key ./root-ca.key
+
 $ step certificate create helm.io helm.crt helm.key --profile leaf --ca inter.crt --ca-key inter.key --no-password --insecure --not-after 17520h
+
 $ step certificate bundle root-ca.crt inter.crt ca-chain.crt
 
 $ helm init \
 --override 'spec.template.spec.containers[0].command'='{/tiller,--storage=secret}' \
+--service-account tiller \
 --tiller-tls --tiller-tls-verify \
 --tiller-tls-cert=./helm.crt \
 --tiller-tls-key=./helm.key \
 --tls-ca-cert=./ca-chain.crt \
---service-account=tiller
+--output yaml | \
+sed 's@apiVersion: extensions/v1beta1@apiVersion: apps/v1@' | \
+sed 's@  replicas: 1@  replicas: 1\n  selector: {"matchLabels": {"app": "helm", "name": "tiller"}}@' | \
+kubectl apply -f -
+```
 
+If secure helm is used, use --tls at the end of `helm` command to use TLS between helm and server.
+
+Initialize Helm
+
+```
+helm init --client-only
 $ cd ~/.helm
 $ cp ~/helm/helm.crt cert.pem
 $ cp ~/helm/helm.key key.pem
 $ rm -fr ~/helm ## Copy dir somewhere and protect it.
 ```
 
-Update Helm repo
+### Update Helm repo
 
 ```
 $ helm repo update
+
+Hang tight while we grab the latest from your chart repositories...
+...Skip local chart repository
+...Successfully got an update from the "stable" chart repository
+Update Complete.
 ```
 
-If secure helm is used, use --tls at the end of helm commands to use TLS between helm and server.
-
-List Helm repo
+### List Helm repo
 
 ```
 $ helm repo list
@@ -388,9 +452,9 @@ Install kubernetes dashboard helm chart
 
 ```
 helm install stable/kubernetes-dashboard --name k8web --namespace kube-system
-
-Note: add --tls above if using secure helm
 ```
+
+Note: add `--tls` in above if using secure helm
 
 ```
 $ kubectl get pods -n kube-system
@@ -419,6 +483,8 @@ k8web	1       	Sat Jul 20 15:04:41 2019	DEPLOYED	---
 --- kubernetes-dashboard-1.7.1	1.10.1     	kube-system
 ```
 
+Note: Use `helm list --tls` if using secure helm
+
 Check service names for the dashboard
 
 ```
@@ -439,9 +505,8 @@ For example, if we want to change the name `k8web-kubernetes-dashboard` to just 
 
 ```
 helm upgrade k8web stable/kubernetes-dashboard --set fullnameOverride="dashboard"
-
-Note: add --tls above if using secure helm
 ```
+Note: add `--tls` above if using secure helm
 
 Check service again
 
@@ -563,13 +628,47 @@ Copy the authentication token as it was obtained previously and login as admin t
 
 ## Install Prometheus and Grafana
 
-This is optional if we do not have enough resources in the VM to deploy additional charts. 
+This is optional if we do not have enough resources in the VM to deploy additional charts.
+
+Since `kubeadm` has deprecated deployment api `extensions/v1beta1`, helm stable charts will not work until they are updated.
+
+The below might not be necessary when stable repo helm charts are updated to Kubernetes 1.16.0+ later on.
+
 
 ```
-helm install stable/prometheus-operator --namespace monitoring --name mon
-
-Note: add --tls above if using secure helm
+cd
+git clone https://github.com/helm/charts
+cd charts/stable
 ```
+
+Replace `extensions/v1beta1` to `policy/v1beta1` PodSecurityPolicy:
+
+```
+sed -i 's@apiVersion: extensions/v1beta1@apiVersion: policy/v1beta1@' `find . -iregex ".*yaml\|.*yml" -exec awk '/kind:\s+PodSecurityPolicy/ {print FILENAME}' {} +`
+```
+
+NetworkPolicy apiVersion is handled well by _helpers.tpl for those charts where it is used.
+
+Replace extensions/v1beta1 to apps/v1 in Deployment, StatefulSet, ReplicaSet, DaemonSet
+
+```
+sed -i 's@apiVersion: extensions/v1beta1@apiVersion: apps/v1@' `find . -iregex ".*yaml\|.*yml" -exec awk '/kind:\s+(Deployment|StatefulSet|ReplicaSet|DaemonSet)/ {print FILENAME}' {} +`
+```
+
+Create a new package.
+
+```
+helm package ./prometheus
+
+Successfully packaged chart and saved it to: /root/charts/stable/prometheus-9.1.1.tgz
+```
+
+
+```
+helm install /root/charts/stable/prometheus-9.1.1.tgz --namespace monitoring --name mon
+```
+Note: add `--tls` above if using secure helm
+
 
 Check monitoring pods
 
@@ -650,16 +749,15 @@ If you need to free-up resources from the VM, delete prometheus using the follow
 
 ```
 helm delete mon --purge
-helm delete ns monitoring
+kubectl delete ns monitoring
 kubectl -n kube-system delete crd \
            alertmanagers.monitoring.coreos.com \
            podmonitors.monitoring.coreos.com \
            prometheuses.monitoring.coreos.com \
            prometheusrules.monitoring.coreos.com \
            servicemonitors.monitoring.coreos.com
-
-Note: add --tls above if using secure helm
 ```
+Note: add `--tls` above if using secure helm
 
 ## Uninstall Kubernetes
 
@@ -668,8 +766,9 @@ In case Kuberenetes needs to be uninstalled.
 Find out node name using `kubectl get nodes`
 
 ```
-kubectl drain <node name> — delete-local-data — force — ignore-daemonsets
+kubectl drain <node name> --delete-local-data --force --ignore-daemonsets
 kubectl delete node <node name>
+kubeadm reset
 ```
 
 Remove kubeadm
