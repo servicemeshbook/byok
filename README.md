@@ -707,9 +707,9 @@ Remove kubeadm
 
 ## Power down VM
 
-Click 'Player > Power > Shutdown Guest`.
+Click `Player` > `Power` > `Shutdown Guest`.
 
- It is highly recommended that you take a backup of the directory after installing Kubernetes environment. As you make progress through the book, you can restore the VM from the backup to start again.
+ It is highly recommended that you take a backup of the directory after installing Kubernetes environment. You can restore the VM from the backup to start again, should you need it.
 
 The files in the directory may show as:
 
