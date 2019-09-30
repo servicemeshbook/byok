@@ -6,12 +6,9 @@ Another read on building your own Kubernetes is at this [link](https://dmtn-071.
 
 ## Prerequisites
 
-* A decent Windows 7 / 10 laptop with minimum 16 GB RAM and Intel Core i7 processor and a preferable minimum 512 GB SSD
-* VMWare Workstation 15.1.0 - Even though it is a licensed software, it is worth buying it. The VMware Workstation is a rock solid software. Assign minimum 12 GB RAM and 8 cores to the VM. There is no harm in assigning all 8 cores to the VM. VMware is pretty good in CPU scheduling even if we do over provisioning.
-* You can use free VMware player but you can run only one VM per host, which is OK for this environment.
-* Build your VM. My personal choice is to use CentOS but you can use any Linux distribution of your choice.
-* In VMware Workstation, Edit ⇨ Virtual Network Editor to set the vmnet8 to subnet address 192.168.142.0 in NAT mode.
-* Attach 100 GB thin provisioned disk (vmdk) for storing Docker images and containers
+* Windows - Read through [this](Windows/)
+* MacBook - Read through [this](MacBook/) 
+
 
 ## Build your own CentOS 7.6 VM
 
