@@ -1,7 +1,7 @@
 # Build your own Kubernetes cluster in a single VM
 
-Version Tested: kubeadm.x86_64 1.16.0-0
-Compatible Docker Driver : 3:18.09.9-3.el7 
+* Version Tested: kubeadm.x86_64 1.16.0-0
+* Compatible Docker Driver : 3:18.09.9-3.el7 
 
 This guide is based upon a medium [article](https://medium.com/@salqadri/build-your-own-multi-node-kubernetes-cluster-with-monitoring-346a7e2ef6e2) written by `Syed Salman Qadri`
 
