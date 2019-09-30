@@ -136,5 +136,5 @@ If `vmnet8` subnet was set to `192.168.142.0` and your Windows machine has inter
 You are ready to install Kubernetes in your environment.
 
 
-After making your base VM working, go [back](..).
+After making your base VM working, go [back](../).
 
