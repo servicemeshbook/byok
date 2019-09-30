@@ -345,23 +345,11 @@ Starting with Helm 3, the tiller will not be required. However, we will be insta
 
 In principle tiller can be installed using `helm init`.
 
-Login as root.
-
-```
-su -
-```
-
 ```
 curl -s https://storage.googleapis.com/kubernetes-helm/helm-v2.14.3-linux-amd64.tar.gz | tar xz
 
 cd linux-amd64
-mv helm /bin
-```
-
-Logout from root
-
-```
-# exit
+sudo mv helm /bin
 ```
 
 Create `tiller` service accoun and grant cluster admin to the `tiller` service account.
@@ -585,6 +573,12 @@ Click `Token` and paste the token from the clipboard (Right click and paste).
 You have Kubernetes 1.15.4 single node environment ready for you now. 
 
 The following are optional and are not recommended. Skip to [this](#power-down-vm).
+
+## Install VMware Octant (Optional)
+
+VMware provides [Octant](https://github.com/vmware/octant) an alternative to Kubernetes dashboard.
+
+You can install `Octant` on your Windows, MacBook, Linux and it is a simple to use an alternative to using Kubernetes dashboard. Refer to [https://github.com/vmware/octant](https://github.com/vmware/octant) for details to install Octant.
 
 ## Install Prometheus and Grafana
 
