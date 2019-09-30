@@ -4,15 +4,17 @@ This guide is based upon a medium [article](https://medium.com/@salqadri/build-y
 
 Another read on building your own Kubernetes is at this [link](https://dmtn-071.lsst.io/).
 
-## Prerequisites
+## Prerequisites - Download base VM
+
+Use one of the two option below to download your base VM image and start the VM.
 
 * Windows - Read through [this](Windows/)
 * MacBook - Read through [this](MacBook/) 
 
 
-## Build your own CentOS 7.6 VM
+## In base VM
 
-You can download the base VM from [here](#) for the purpose of following through the book. The VM was built using CentOS 7.6 Linux distribution on VMware Workstation 15.1.0. The `root` password in the VM is `password`. When you start VM, it will automatically login as `user` and the password is `password` for the user `user`.
+The `root` password in the VM is `password`. When you start VM, it will automatically login as `user` and the password is `password` for the user `user`.
 
 Start VM and login as root.
 
@@ -21,13 +23,6 @@ su -
 ```
 
 ## Prerequisites
-
-* Internet Access - Make sure that you can run `ping -c4 google.com` or `dig +search +noall +answer google.com` from the VM to make sure that Internet access is available. 
-    ```
-    $ dig +search +noall +answer google.com
-    google.com.		163	IN	A	172.217.15.78
-    ```
-    If ping does not succeed, it is quite possible that the network address of VMnet8 adapter needs to be fixed. Refer to [this](docs/vmnet.md) link for instructions to fix `vmnet8` subnet address in VMware.
 
 * Install `socat` - For Helm, `socat` is used to set the port forwarding for both the Helm client and Tiller.
     ```

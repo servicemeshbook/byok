@@ -119,7 +119,7 @@ Navigate to the folder `vm.tar` where vm was extracted. Right click `kube01.vmx`
 
 If VM prompts for you to update VMware software, cancel it and if it prompts for you to update vm tools in the VM, cancel it.
 
-### Sanity checks
+### Sanity check
 
 Double click `Terminal`
 
