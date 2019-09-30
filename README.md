@@ -1,5 +1,7 @@
 # Build your own Kubernetes cluster in a single VM
 
+[![asciicast](https://asciinema.org/a/271731.svg)](https://asciinema.org/a/271731)
+
 This guide is based upon a medium [article](https://medium.com/@salqadri/build-your-own-multi-node-kubernetes-cluster-with-monitoring-346a7e2ef6e2) written by `Syed Salman Qadri`
 
 Another read on building your own Kubernetes is at this [link](https://dmtn-071.lsst.io/).
@@ -22,7 +24,7 @@ Login as root.
 sudo su -
 ```
 
-Note: You can copy and paste command from here to the VM. If using Windows, you can use middle mouse button to paste the commands from the clipboard.
+Note: You can copy and paste command from here to the VM. You can use middle mouse button to paste the commands from the clipboard or press `Shift-Ctrl-V` to paste the contents from the clipboard to the command line shell.
 
 ## Prerequisites
 
