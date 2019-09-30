@@ -578,13 +578,13 @@ kube-dns        ClusterIP   10.96.0.10      <none>        53/UDP,53/TCP   7m34s
 tiller-deploy   ClusterIP   10.109.36.64    <none>        44134/TCP       3m13s
 ```
 
-Doubleclick Google Chrome from the desktop of the VM and run https://localhost:<NodePort> and NodePort in this case is `31869`. This port may be different in your case. 
+Doubleclick Google Chrome from the desktop of the VM and run https://localhost:31869 and change the port number as per your output.
 
 Click `Token` and paste the token from the clipboard (Right click and paste).
 
 You have Kubernetes 1.15.4 single node environment ready for you now. 
 
-The following are optional and are not recommended.
+The following are optional and are not recommended. Skip to [this](#power-down-vm).
 
 ## Install Prometheus and Grafana
 
@@ -707,7 +707,9 @@ Remove kubeadm
 
 ## Power down VM
 
-You can power down the VM. It is highly recommended that you take a backup of the directory after installing Kubernetes environment. As you make progress through the book, you can restore the VM from the backup to start again.
+Click 'Player > Power > Shutdown Guest`.
+
+ It is highly recommended that you take a backup of the directory after installing Kubernetes environment. As you make progress through the book, you can restore the VM from the backup to start again.
 
 The files in the directory may show as:
 
@@ -724,6 +726,14 @@ total 7.3G
 -rw-r--r-- 1 vikram 197609 5.2G Jul 21 09:44 osdisk.vmdk
 -rw-r--r-- 1 vikram 197609 277K Jul 21 09:44 vmware.log
 ```
+
+Copy above directory to your backup drive for use it later.
+
+## Power up VM
+
+Locate `kube01.vmx` and right click to open it either using `VMware Player` or `VMware WorkStation`.
+
+Open `Terminal` and run `kubectl get pods -A` and wait for all pods to be ready and in `Running` status.
 
 ## Conclusion
 
