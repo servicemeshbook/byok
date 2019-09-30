@@ -16,11 +16,13 @@ Use one of the two option below to download your base VM image and start the VM.
 
 The `root` password in the VM is `password`. When you start VM, it will automatically login as `user` and the password is `password` for the user `user`.
 
-Start VM and login as root.
+Login as root.
 
 ```
-su -
+sudo su -
 ```
+
+Note: You can copy and paste command from here to the VM. If using Windows, you can use middle mouse button to paste the commands from the clipboard.
 
 ## Prerequisites
 
@@ -39,21 +41,64 @@ su -
     yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
     ```
 
-* Install docker. At the time of writing, the lateset version of docker is 3:18.09.8-3.el7. The latest version could be different in your case.
+* Install docker. Since we will be working Kubernetes 1.15.4, the tested version of Docker for this release is 3:18.09.8-3.el7.
+
+We will switch the docker `cgroup` driver from `cggroupfs` to `systemd`.
+
+```
+cat > /etc/docker/daemon.json <<EOF
+{
+  "exec-opts": ["native.cgroupdriver=systemd"],
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "100m"
+  },
+  "storage-driver": "overlay2"
+}
+EOF
+```
+
 
 * Tip: Find out available version using `yum --showduplicates list docker-ce`
 
-    ```
-    yum -y install docker-ce-18.09.8-3.el7.x86_64
-    systemctl enable docker
-    systemctl start docker
-    ```
+```
+yum -y install docker-ce-cli-18.09.8-3.el7.x86_64
+yum -y install docker-ce-18.09.8-3.el7.x86_64
+systemctl enable docker
+systemctl start docker
+```
 
 * Optionally: Configure a separate disk to mount `/var/lib/doocker` and restart docker.
 
+* Check `docker version`
+
+```
+# docker version
+Client:
+ Version:           18.09.8
+ API version:       1.39
+ Go version:        go1.10.8
+ Git commit:        0dd43dd87f
+ Built:             Wed Jul 17 17:40:31 2019
+ OS/Arch:           linux/amd64
+ Experimental:      false
+
+Server: Docker Engine - Community
+ Engine:
+  Version:          18.09.8
+  API version:      1.39 (minimum version 1.12)
+  Go version:       go1.10.8
+  Git commit:       0dd43dd
+  Built:            Wed Jul 17 17:10:42 2019
+  OS/Arch:          linux/amd64
+  Experimental:     false
+```
+
+Make sure that we have Docker `18.09.8` and not the higher version.
+
 ## Build Kubernetes using one VM
 
-Note: You also have a choice to just use [minikube](https://kubernetes.io/docs/setup/learning-environment/minikube/). Though. by going through this exercise, you will know how to build your own Kuberenets environment.
+Note: You also have a choice to just use [minikube](https://kubernetes.io/docs/setup/learning-environment/minikube/). Though, by going through this exercise, you will know how to build your own Kuberenets environment.
 
 This exercise is to use a single VM to build a Kubernetes environment having a master node, etcd database, pod network using Calico and Helm. Refer to the above mentioned medium article if you want to build a multi-node cluster.
 
@@ -85,7 +130,7 @@ EOF
 
 ### Install Kubernetes 
 
-At the time of this writing, Kubernetes 1.15.1 is the latest version and this could be different in your case.
+At the time of this writing, Kubernetes 1.16.0 is the latest version and it has deprecated few APIs which will create issues in installing some of the Helm charts especially for Deployment and StateFulSets.
 
 Check available versions of a packages
 
@@ -93,10 +138,10 @@ Check available versions of a packages
 yum --showduplicates list kubeadm
 ```
 
-And, select the version that we need. For example, we are selecting `1.15.1-0`.
+For example, we will be selecting `1.15.4-0`.
 
 ```
-version=1.15.1-0
+version=1.15.4-0
 yum install -y kubelet-$version kubeadm-$version kubectl-$version
 ```
 
@@ -136,7 +181,13 @@ Comment entry for swap in `/etc/fstab`. Example:
 
 ### Run kubeadm
 
-Logout from root and login as a `user` which has sudo authority. Check by running `visudo` and there must be an entry `user  ALL=(ALL)       NOPASSWD: ALL` so that the user `user` has `sudo` authority to type `root` commands without requiring a password.
+Logout from root and login as a `user` which has `sudo` authority. Check by running `visudo` and there must be an entry `user  ALL=(ALL)       NOPASSWD: ALL` so that the user `user` has `sudo` authority to type `root` commands without requiring a password.
+
+Type `exit` to logout from root.
+
+```
+# exit
+```
 
 ```
 sudo kubeadm init --pod-network-cidr=10.142.0.0/16
@@ -146,7 +197,7 @@ The output is as shown:
 
 ```
 << removed >>
-Your Kubernetes master has initialized successfully!
+Your Kubernetes control-plane has initialized successfully!
 
 To start using your cluster, you need to run the following as a regular user:
 
@@ -158,13 +209,20 @@ You should now deploy a pod network to the cluster.
 Run "kubectl apply -f [podnetwork].yaml" with one of the options listed at:
   https://kubernetes.io/docs/concepts/cluster-administration/addons/
 
-You can now join any number of machines by running the following on each node
-as root:
+Then you can join any number of worker nodes by running the following on each as root:
 
-  kubeadm join 192.168.142.101:6443 --token lb9jf2.atnua0345uqti0xv --discovery-token-ca-cert-hash sha256:98207cf21789ee55caffa98fa13aa654b89902e8c9c162f52e7e7b513c0d88fb
+kubeadm join 192.168.142.101:6443 --token 2u0en7.g1igrb2w54g9bts7 \
+    --discovery-token-ca-cert-hash sha256:cae7cae0274175d680a683e464e2b5e6e82817dab32c4b476ba9a322434227bb 
 ```
 
-The important thing above is to copy/save the token that will be required to add additional nodes to the cluster. 
+If you loose above `kubeadm join` command, a new token and hash can be generated as:
+
+```
+# kubeadm token create --print-join-command
+kubeadm join 192.168.142.101:6443 --token 1denfs.nw73pkobgksk0ej9     --discovery-token-ca-cert-hash sha256:cae7cae0274175d680a683e464e2b5e6e82817dab32c4b476ba9a322434227bb
+```
+
+The above is for reference purpose only since we will be using only one VM. You will need above to add another node to the Kubernetes cluster in case you need to extend your cluster to multiple nodes. 
 
 ### Configure kubectl
 
@@ -180,8 +238,8 @@ Check Kubernetes version
 
 ```
 $ kubectl version --short
-Client Version: v1.15.1
-Server Version: v1.15.1
+Client Version: v1.15.4
+Server Version: v1.15.4
 ```
 
 Untaint the node - this is required since we have only one VM to install objects.
@@ -201,7 +259,7 @@ osc01   NotReady   master   95s   v1.12.10
 Check pod status in `kube-system` and you will notice that `coredns` pods are in pending state since pod network has not yet been installed.
 
 ```
-$ kubectl get pods -n kube-system
+$ kubectl get pods -A
 NAME                            READY   STATUS    RESTARTS   AGE
 coredns-bb49df795-lcjvx         0/1     Pending   0          119s
 coredns-bb49df795-wqmzb         0/1     Pending   0          119s
@@ -214,18 +272,18 @@ kube-scheduler-osc01            1/1     Running   0          81s
 
 ## Install Calico network for pods
 
-Choose proper version of Calico [Link](https://docs.projectcalico.org/v3.7/getting-started/kubernetes/requirements)
+Choose proper version of Calico [Link](https://docs.projectcalico.org/v3.9/getting-started/kubernetes/requirements)
 
-Calico 3.7 is tested with Kubernetes versions 1.12, 1.13 and 1.14
-
-```
-kubectl apply -f https://docs.projectcalico.org/v3.7/manifests/calico.yaml
-```
-
-Check the status of the cluster and wait for all pods to be in `Running` and `Ready` state.
+Calico 3.9 is tested with Kubernetes versions 1.12, 1.13 and 1.14
 
 ```
-$ kubectl -n kube-system get pods
+kubectl apply -f https://docs.projectcalico.org/v3.9/manifests/calico.yaml
+```
+
+Check the status of the cluster and wait for all pods to be in `Running` and `Ready 1/1` state.
+
+```
+$ kubectl get pods -A
 NAME                                       READY   STATUS    RESTARTS   AGE
 calico-kube-controllers-866db6d5f7-w9mfq   1/1     Running   0          33s
 calico-node-mwgzx                          1/1     Running   0          33s
@@ -283,7 +341,7 @@ busybox   1/1     Running   0          13s
 
 ## Install helm and tiller 
 
-Starting with Helm 3, the tiller will not be required. However, we will be installing Helm v2.14.2
+Starting with Helm 3, the tiller will not be required. However, we will be installing Helm v2.14.3
 
 In principle tiller can be installed using `helm init`.
 
@@ -294,10 +352,16 @@ su -
 ```
 
 ```
-curl -s https://storage.googleapis.com/kubernetes-helm/helm-v2.14.2-linux-amd64.tar.gz | tar xz
+curl -s https://storage.googleapis.com/kubernetes-helm/helm-v2.14.3-linux-amd64.tar.gz | tar xz
 
 cd linux-amd64
 mv helm /bin
+```
+
+Logout from root
+
+```
+# exit
 ```
 
 Create `tiller` service accoun and grant cluster admin to the `tiller` service account.
@@ -307,6 +371,7 @@ kubectl -n kube-system create serviceaccount tiller
 
 kubectl create clusterrolebinding tiller --clusterrole cluster-admin --serviceaccount=kube-system:tiller
 ```
+Helm can be installed without and with security. If no security is required (like demo/test environment), follow Option - 1 or follow option - 2 to install helm with security.
 
 ### Option - 1 : No security
 
@@ -321,9 +386,11 @@ Check helm version
 ```
 helm version --short
 
-Client: v2.14.2+ga8b13cc
-Server: v2.14.2+ga8b13cc
+Client: v2.14.3+g0e7f3b6
+Server: v2.14.3+g0e7f3b6
 ```
+
+If you installed helm without secruity, skip to the [next](##-Install-Kubernetes-dashboard) section.
 
 ### Option - 2 : With TLS security
 
@@ -379,7 +446,7 @@ local 	http://127.0.0.1:8879/charts
 Install kubernetes dashboard helm chart
 
 ```
-helm install stable/kubernetes-dashboard --name k8web --namespace kube-system
+helm install stable/kubernetes-dashboard --name k8web --namespace kube-system --set fullnameOverride="dashboard"
 
 Note: add --tls above if using secure helm
 ```
@@ -405,71 +472,34 @@ Check helm charts that we deployed
 ```
 $ helm list
 NAME 	REVISION	UPDATED                 	STATUS  	---
-k8web	1       	Sat Jul 20 15:04:41 2019	DEPLOYED	---
+k8web	1       	Mon Sep 30 13:00:22 2019	DEPLOYED	---
 
 --- CHART                     	APP VERSION	NAMESPACE  
---- kubernetes-dashboard-1.7.1	1.10.1     	kube-system
+--- kubernetes-dashboard-1.9.0	1.10.1     	kube-system
 ```
 
 Check service names for the dashboard
 
 ```
 $ kubectl get svc -n kube-system
-NAME                         TYPE        CLUSTER-IP     EXTERNAL-IP   ---
-k8web-kubernetes-dashboard   ClusterIP   10.104.40.19   <none>        ---
-kube-dns                     ClusterIP   10.96.0.10     <none>        ---
-tiller-deploy                ClusterIP   10.98.111.98   <none>        ---
+NAME          TYPE        CLUSTER-IP     EXTERNAL-IP   ---
+dashboard     ClusterIP   10.104.40.19   <none>        ---
+kube-dns      ClusterIP   10.96.0.10     <none>        ---
+tiller-deploy ClusterIP   10.98.111.98   <none>        ---
 
 --- PORT(S)         AGE
 --- 443/TCP         2m56s
 --- 53/UDP,53/TCP   176m
 --- 44134/TCP       31m
-
 ```
 
-For example, if we want to change the name `k8web-kubernetes-dashboard` to just `dashboard`, run this `helm upgrade` command.
+We will patch the dashboard service from CluserIP to NodePort so that we could run the dashboard using node IP address.
 
 ```
-helm upgrade k8web stable/kubernetes-dashboard --set fullnameOverride="dashboard"
-
-Note: add --tls above if using secure helm
-```
-
-Check service again
-
-```
-$ kubectl get svc -n kube-system
-NAME            TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)         AGE
-dashboard       ClusterIP   10.101.245.159   <none>        443/TCP         4s
-kube-dns        ClusterIP   10.96.0.10       <none>        53/UDP,53/TCP   178m
-tiller-deploy   ClusterIP   10.98.111.98     <none>        44134/TCP       33m
-```
-
-Edit the service to change the service type.
-
-```
-kubectl -n kube-system edit svc dashboard
-```
-
-Scroll down and change the `type` from `ClusterIP` to `NodePort`
-```
-  sessionAffinity: None
-  type: NodePort
-status:
-  loadBalancer: {}
+kubectl -n kube-system patch svc dashboard --type='json' -p '[{"op":"replace","path":"/spec/type","value":"NodePort"}]'
 ```
 
 ### Run Kubernetes dashboard
-
-Check `NodePort` for the service.
-
-```
-$ kubectl get svc -n kube-system
-NAME            TYPE        CLUSTER-IP       EXTERNAL-IP  PORT(S)         AGE
-dashboard       NodePort    10.101.245.159   <none>       443:31447/TCP   4m39s
-kube-dns        ClusterIP   10.96.0.10       <none>       53/UDP,53/TCP   3h2m
-tiller-deploy   ClusterIP   10.98.111.98     <none>       44134/TCP       38m
-```
 
 Check the internal DNS server
 
@@ -496,10 +526,10 @@ Address 1: 10.106.11.211 dashboard.kube-system.svc.cluster.local
 Edit VM's `/etc/resolv.conf` to add Kubernetes DNS server
 
 ```
-vi /etc/resolv.conf
+sudo vi /etc/resolv.conf
 ```
 
-The additional two lines added for name resolution of Kubernetes services
+Add following two lines for name resolution of Kubernetes services and save file.
 
 ```
 search cluster.local
@@ -535,7 +565,7 @@ namespace:  11 bytes
 token:      eyJhbGciOiJSUzI1NiIsImtpZCI6IiJ9.eyJpc3MiOiJrdWJlcm5ldGVzL3NlcnZpY2VhY2NvdW50Iiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9uYW1lc3BhY2UiOiJrdWJlLXN5c3RlbSIsImt1YmVybmV0ZXMuaW8vc2VydmljZWFjY291bnQvc2VjcmV0Lm5hbWUiOiJhZG1pbi10b2tlbi0yZjR6OCIsImt1YmVybmV0ZXMuaW8vc2VydmljZWFjY291bnQvc2VydmljZS1hY2NvdW50Lm5hbWUiOiJhZG1pbiIsImt1YmVybmV0ZXMuaW8vc2VydmljZWFjY291bnQvc2VydmljZS1hY2NvdW50LnVpZCI6IjgxYjc0NGM0LWFiMGItMTFlOS05ODIzLTAwNTA1NjMyZjZhMCIsInN1YiI6InN5c3RlbTpzZXJ2aWNlYWNjb3VudDprdWJlLXN5c3RlbTphZG1pbiJ9.iaWllI4XHQ9UQQHwXQRaafW7pSD6EpNJ_rEaFqkd5qwedxgJodD9MJ90ujlZx4UtvUt2rTURHsJR-qdbFoUEVbE3CcrfwGkngYFrnU6xjwO3KydndyhLb6v6DKdUH3uQdMnu4V1RVYBCq2Q1bOsejsgNUIxJw1R8N7eUpIte64qUfGYtrFT_NBTnA9nEZPfPAiSlBBXbC0ZSBKXzqOD4veCXsqlc0yy5oXHOoMjROm-Uhv4Oh0gTwdpb-at8Y0p9mPjIy9IQuzSo3Pg5hDKMex4Pwm8WLus4wAaS4mZKu2PI3O2-hhep3GlyvuVH8pOiXQ4p1TI5c0qdDs2rQRs4ow
 ```
 
-We would need the above authentication token for accessing the admin services from the Kubernetes dashboard.
+Highlight the authentication token from your screen, right click to copy to the clipboard.
 
 Find out the node port for the `dashboard` service.
 
@@ -543,15 +573,18 @@ Find out the node port for the `dashboard` service.
 kubectl get svc -n kube-system
 
 NAME            TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)         AGE
-dashboard       NodePort    10.102.12.203   <none>        443:30608/TCP   2m7s
+dashboard       NodePort    10.102.12.203   <none>        443:31869/TCP   2m7s
 kube-dns        ClusterIP   10.96.0.10      <none>        53/UDP,53/TCP   7m34s
 tiller-deploy   ClusterIP   10.109.36.64    <none>        44134/TCP       3m13s
-
 ```
 
-Open browser in the VM and run https://localhost:<NodePort> and NodePort in this case is `31447`. This port may be different in your case. 
+Doubleclick Google Chrome from the desktop of the VM and run https://localhost:<NodePort> and NodePort in this case is `31869`. This port may be different in your case. 
 
-Copy the authentication token as it was obtained previously and login as admin to the cluster.
+Click `Token` and paste the token from the clipboard (Right click and paste).
+
+You have Kubernetes 1.15.4 single node environment ready for you now. 
+
+The following are optional and are not recommended.
 
 ## Install Prometheus and Grafana
 
