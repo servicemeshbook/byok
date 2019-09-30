@@ -1,7 +1,5 @@
 # Build your own Kubernetes cluster in a single VM
 
-[![asciicast](https://asciinema.org/a/271731.svg)](https://asciinema.org/a/271731){:target="_blank"}
-
 This guide is based upon a medium [article](https://medium.com/@salqadri/build-your-own-multi-node-kubernetes-cluster-with-monitoring-346a7e2ef6e2) written by `Syed Salman Qadri`
 
 Another read on building your own Kubernetes is at this [link](https://dmtn-071.lsst.io/).
@@ -734,3 +732,7 @@ Open `Terminal` and run `kubectl get pods -A` and wait for all pods to be ready 
 ## Conclusion
 
 This is a pretty basic Kubernetes cluster just by using a single VM - which is good for learning purposes. In reality, we should use a Kubernetes distribution built by a provider such as RedHat OpenShift or IBM Cloud Private or use public cloud provider such as AWS, GKE, Azure or many others.
+
+## Ascinema Cast
+
+[![asciicast](https://asciinema.org/a/271731.svg)](https://asciinema.org/a/271731)
