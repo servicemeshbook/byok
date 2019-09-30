@@ -1,6 +1,6 @@
 # Build your own Kubernetes cluster in a single VM
 
-[![asciicast](https://asciinema.org/a/271731.svg)](https://asciinema.org/a/271731)
+[![asciicast](https://asciinema.org/a/271731.svg)](https://asciinema.org/a/271731){:target="_blank"}
 
 This guide is based upon a medium [article](https://medium.com/@salqadri/build-your-own-multi-node-kubernetes-cluster-with-monitoring-346a7e2ef6e2) written by `Syed Salman Qadri`
 
