@@ -390,7 +390,7 @@ Client: v2.14.3+g0e7f3b6
 Server: v2.14.3+g0e7f3b6
 ```
 
-If you installed helm without secruity, skip to the [next](##-Install-Kubernetes-dashboard) section.
+If you installed helm without secruity, skip to the [next](#Install-Kubernetes-dashboard) section.
 
 ### Option - 2 : With TLS security
 
