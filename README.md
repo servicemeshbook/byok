@@ -132,7 +132,7 @@ EOF
 
 At the time of this writing, Kubernetes 1.16.0 is the latest version and it has deprecated few APIs which will create issues in installing some of the Helm charts especially for Deployment and StateFulSets.
 
-Check available versions of a packages
+Check available versions of packages
 
 ```
 yum --showduplicates list kubeadm
@@ -181,8 +181,7 @@ Comment entry for swap in `/etc/fstab`. Example:
 
 ### Run kubeadm
 
-Logout from root and login as a `user` which has `sudo` authority. Check by running `visudo` and there must be an entry `user  ALL=(ALL)       NOPASSWD: ALL` so that the user `user` has `sudo` authority to type `root` commands without requiring a password.
-
+Check by running `visudo` and there must be an entry `user  ALL=(ALL)       NOPASSWD: ALL` so that the user `user` has `sudo` authority to type `root` commands without requiring a password.
 Type `exit` to logout from root.
 
 ```
@@ -222,7 +221,7 @@ If you loose above `kubeadm join` command, a new token and hash can be generated
 kubeadm join 192.168.142.101:6443 --token 1denfs.nw73pkobgksk0ej9     --discovery-token-ca-cert-hash sha256:cae7cae0274175d680a683e464e2b5e6e82817dab32c4b476ba9a322434227bb
 ```
 
-The above is for reference purpose only since we will be using only one VM. You will need above to add another node to the Kubernetes cluster in case you need to extend your cluster to multiple nodes. 
+Since we will be using a single VM, the Kubernetes token from above is for reference purpose only. You will require the above token command in you require a multi-node Kubernetes cluster.
 
 ### Configure kubectl
 
@@ -253,7 +252,7 @@ Check node status and note that it is not yet ready since we have not yet instal
 ```
 $ kubectl get nodes
 NAME    STATUS     ROLES    AGE   VERSION
-osc01   NotReady   master   95s   v1.12.10
+osc01   NotReady   master   95s   v1.15.4
 ```
 
 Check pod status in `kube-system` and you will notice that `coredns` pods are in pending state since pod network has not yet been installed.
@@ -274,7 +273,7 @@ kube-scheduler-osc01            1/1     Running   0          81s
 
 Choose proper version of Calico [Link](https://docs.projectcalico.org/v3.9/getting-started/kubernetes/requirements)
 
-Calico 3.9 is tested with Kubernetes versions 1.12, 1.13 and 1.14
+Calico 3.9 is tested with Kubernetes versions 1.12, 1.13, 1.14 and 1.15
 
 ```
 kubectl apply -f https://docs.projectcalico.org/v3.9/manifests/calico.yaml
@@ -359,9 +358,9 @@ kubectl -n kube-system create serviceaccount tiller
 
 kubectl create clusterrolebinding tiller --clusterrole cluster-admin --serviceaccount=kube-system:tiller
 ```
-Helm can be installed without and with security. If no security is required (like demo/test environment), follow Option - 1 or follow option - 2 to install helm with security.
+Helm can be installed with and without security. If no security is required (like demo/test environment), follow Option - 1 or follow option - 2 to install helm with security.
 
-### Option - 1 : No security
+### Option - 1 : No security, ideal for running in a sandbox environment.
 
 Initialize the `helm` and it will install `tiller` server in Kubernetes.
 
@@ -380,7 +379,7 @@ Server: v2.14.3+g0e7f3b6
 
 If you installed helm without secruity, skip to the [next](#Install-Kubernetes-dashboard) section.
 
-### Option - 2 : With TLS security
+### Option - 2 : With TLS security, ideal for running in production.
 
 Install step
 
@@ -459,11 +458,11 @@ Check helm charts that we deployed
 
 ```
 $ helm list
-NAME 	REVISION	UPDATED                 	STATUS  	---
-k8web	1       	Mon Sep 30 13:00:22 2019	DEPLOYED	---
+NAME    REVISION        UPDATED                         ---
+k8web   1               Mon Sep 30 22:21:01 2019        ---
 
---- CHART                     	APP VERSION	NAMESPACE  
---- kubernetes-dashboard-1.9.0	1.10.1     	kube-system
+--- STATUS          CHART                           APP VERSION     NAMESPACE
+--- DEPLOYED        kubernetes-dashboard-1.10.0     1.10.1          kube-system
 ```
 
 Check service names for the dashboard
@@ -481,7 +480,7 @@ tiller-deploy ClusterIP   10.98.111.98   <none>        ---
 --- 44134/TCP       31m
 ```
 
-We will patch the dashboard service from CluserIP to NodePort so that we could run the dashboard using node IP address.
+We will patch the dashboard service from CluserIP to NodePort so that we could run the dashboard using the node IP address.
 
 ```
 kubectl -n kube-system patch svc dashboard --type='json' -p '[{"op":"replace","path":"/spec/type","value":"NodePort"}]'
@@ -517,7 +516,7 @@ Edit VM's `/etc/resolv.conf` to add Kubernetes DNS server
 sudo vi /etc/resolv.conf
 ```
 
-Add following two lines for name resolution of Kubernetes services and save file.
+Add the following two lines for name resolution of Kubernetes services and save file.
 
 ```
 search cluster.local
@@ -580,7 +579,7 @@ VMware provides [Octant](https://github.com/vmware/octant) an alternative to Kub
 
 You can install `Octant` on your Windows, MacBook, Linux and it is a simple to use an alternative to using Kubernetes dashboard. Refer to [https://github.com/vmware/octant](https://github.com/vmware/octant) for details to install Octant.
 
-## Install Prometheus and Grafana
+## Install Prometheus and Grafana (Optional)
 
 This is optional if we do not have enough resources in the VM to deploy additional charts. 
 
