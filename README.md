@@ -735,4 +735,6 @@ This is a pretty basic Kubernetes cluster just by using a single VM - which is g
 
 ## Ascinema Cast
 
+Click the link below to open the [Asciinema](https://ascinema.org) player to playback the commands that were captured while building the Kubernetes environment.
+
 [![asciicast](https://asciinema.org/a/271731.svg)](https://asciinema.org/a/271731)
