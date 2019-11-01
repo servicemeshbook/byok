@@ -41,7 +41,7 @@ Note: You can copy and paste command from here to the VM. You can use middle mou
     yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
     ```
 
-* Install docker. Since we will be working Kubernetes 1.15.4, the tested version of Docker for this release is 3:18.09.8-3.el7.
+* Install docker. Since we will be working Kubernetes 1.15.5, the tested version of Docker for this release is 3:18.09.8-3.el7.
 
 We will switch the docker `cgroup` driver from `cggroupfs` to `systemd`.
 
@@ -138,10 +138,10 @@ Check available versions of packages
 yum --showduplicates list kubeadm
 ```
 
-For example, we will be selecting `1.15.4-0`.
+For example, we will be selecting `1.15.5-0`.
 
 ```
-version=1.15.4-0
+version=1.15.5-0
 yum install -y kubelet-$version kubeadm-$version kubectl-$version
 ```
 
@@ -189,7 +189,8 @@ Type `exit` to logout from root.
 ```
 
 ```
-sudo kubeadm init --pod-network-cidr=10.142.0.0/16
+sudo kubeadm config images pull
+sudo kubeadm init --pod-network-cidr=10.142.0.0/16 --apiserver-advertise-address=192.168.142.101 --apiserver-cert-extra-sans=192.168.142.101
 ```
 
 The output is as shown:
@@ -237,8 +238,8 @@ Check Kubernetes version
 
 ```
 $ kubectl version --short
-Client Version: v1.15.4
-Server Version: v1.15.4
+Client Version: v1.15.5
+Server Version: v1.15.5
 ```
 
 Untaint the node - this is required since we have only one VM to install objects.
@@ -252,7 +253,7 @@ Check node status and note that it is not yet ready since we have not yet instal
 ```
 $ kubectl get nodes
 NAME    STATUS     ROLES    AGE   VERSION
-osc01   NotReady   master   95s   v1.15.4
+osc01   NotReady   master   95s   v1.15.5
 ```
 
 Check pod status in `kube-system` and you will notice that `coredns` pods are in pending state since pod network has not yet been installed.
@@ -271,12 +272,15 @@ kube-scheduler-osc01            1/1     Running   0          81s
 
 ## Install Calico network for pods
 
-Choose proper version of Calico [Link](https://docs.projectcalico.org/v3.9/getting-started/kubernetes/requirements)
+Choose proper version of Calico [Link](https://docs.projectcalico.org/v3.10/getting-started/kubernetes/requirements)
 
-Calico 3.9 is tested with Kubernetes versions 1.12, 1.13, 1.14 and 1.15
+Calico 3.10 is tested with Kubernetes versions 1.14, 1.15 and 1.16
 
 ```
-kubectl apply -f https://docs.projectcalico.org/v3.9/manifests/calico.yaml
+POD_CIDR=10.142.0.0/16
+curl https://docs.projectcalico.org/v3.10/manifests/calico-policy-only.yaml -O
+sed -i -e "s?192.168.0.0/16?$POD_CIDR?g" calico-policy-only.yaml
+kubectl apply -f calico-policy-only.yaml
 ```
 
 Check the status of the cluster and wait for all pods to be in `Running` and `Ready 1/1` state.
@@ -340,12 +344,12 @@ busybox   1/1     Running   0          13s
 
 ## Install helm and tiller 
 
-Starting with Helm 3, the tiller will not be required. However, we will be installing Helm v2.14.3
+Starting with Helm 3, the tiller will not be required. However, we will be installing Helm v2.15.2
 
 In principle tiller can be installed using `helm init`.
 
 ```
-curl -s https://storage.googleapis.com/kubernetes-helm/helm-v2.14.3-linux-amd64.tar.gz | tar xz
+curl -s https://storage.googleapis.com/kubernetes-helm/helm-v2.15.2-linux-amd64.tar.gz | tar xz
 
 cd linux-amd64
 sudo mv helm /bin
@@ -373,8 +377,8 @@ Check helm version
 ```
 helm version --short
 
-Client: v2.14.3+g0e7f3b6
-Server: v2.14.3+g0e7f3b6
+Client: v2.15.2+g8dce272
+Server: v2.15.2+g8dce272
 ```
 
 If you installed helm without secruity, skip to the [next](#Install-Kubernetes-dashboard) section.
@@ -410,6 +414,8 @@ $ cp ~/helm/helm.crt cert.pem
 $ cp ~/helm/helm.key key.pem
 $ rm -fr ~/helm ## Copy dir somewhere and protect it.
 ```
+
+## Update helm repository
 
 Update Helm repo
 
@@ -569,9 +575,34 @@ Doubleclick Google Chrome from the desktop of the VM and run https://localhost:3
 
 Click `Token` and paste the token from the clipboard (Right click and paste).
 
-You have Kubernetes 1.15.4 single node environment ready for you now. 
+You have Kubernetes 1.15.5 single node environment ready for you now. 
 
 The following are optional and are not recommended. Skip to [this](#power-down-vm).
+
+## Install Metrics server (Optional)
+
+Metrics server is required if we need to run `kubectl top` commands to show the metrics.
+
+```
+helm install stable/metrics-server --name metrics --namespace kube-system --set fullnameOverride="metrics" --set hostNetwork.enabled=True
+```
+You may need to edit the deployment to add the insecure flag.
+```
+kubectl -n kube-system edit deploy metrics
+
+And, add the following to the /metrics-server arguments.
+
+        - --kubelet-insecure-tls
+        - --kubelet-preferred-address-types=InternalIP        
+```
+
+This should return output.
+```
+kubectl get --raw "/apis/metrics.k8s.io/v1beta1/nodes"
+```
+Wait for few minutes, `kubectl top nodes` and `kubectl top pods -A` should show output.
+
+
 
 ## Install VMware Octant (Optional)
 
@@ -686,7 +717,7 @@ In case Kuberenetes needs to be uninstalled.
 Find out node name using `kubectl get nodes`
 
 ```
-kubectl drain <node name> — delete-local-data — force — ignore-daemonsets
+kubectl drain <node name> --delete-local-data --force --ignore-daemonsets
 kubectl delete node <node name>
 ```
 
