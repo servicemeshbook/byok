@@ -710,7 +710,7 @@ kubectl -n kube-system delete crd \
 Note: add --tls above if using secure helm
 ```
 
-## Uninstall Kubernetes
+## Uninstall Kubernetes and Docker
 
 In case Kuberenetes needs to be uninstalled.
 
@@ -724,9 +724,20 @@ kubectl delete node <node name>
 Remove kubeadm
 
 ```
-# yum remove kubeadm kubectl kubelet kubernetes-cni kube*
+systemctl stop kubelet
+# yum -y remove kubeadm kubectl kubelet kubernetes-cni kube*
 
 # rm -fr ~/.kube
+```
+
+Remove docker and images
+```
+docker stop $(docker ps -q)
+docker rm $(docker ps -a -q)
+docker rmi $(docker images -q)
+systemctl stop docker
+rm -fr /var/lib/docker/* 
+yum -y remove docker-ce docker-ce-cli
 ```
 
 ## Power down VM
