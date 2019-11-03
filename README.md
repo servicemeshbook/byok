@@ -38,6 +38,7 @@ Note: You can copy and paste command from here to the VM. You can use middle mou
 * Add docker repo
 
     ```
+    yum -y install yum-utils
     yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
     ```
 
@@ -46,6 +47,7 @@ Note: You can copy and paste command from here to the VM. You can use middle mou
 We will switch the docker `cgroup` driver from `cggroupfs` to `systemd`.
 
 ```
+mkdir -p /etc/docker
 cat > /etc/docker/daemon.json <<EOF
 {
   "exec-opts": ["native.cgroupdriver=systemd"],
@@ -95,6 +97,15 @@ Server: Docker Engine - Community
 ```
 
 Make sure that we have Docker `18.09.8` and not the higher version.
+
+Check if the storage driver is `overlay2` and the `CGroup` driver is `systemd`.
+
+```
+docker info | grep -E "Cgroup|Storage Driver"
+
+Storage Driver: overlay2
+Cgroup Driver: systemd
+```
 
 ## Build Kubernetes using one VM
 
@@ -725,15 +736,15 @@ Remove kubeadm
 
 ```
 systemctl stop kubelet
-# yum -y remove kubeadm kubectl kubelet kubernetes-cni kube*
+kubeadm reset
+iptables -F && iptables -t nat -F && iptables -t mangle -F && iptables -X
+yum -y remove kubeadm kubectl kubelet kubernetes-cni kube*
 
-# rm -fr ~/.kube
+rm -fr ~/.kube
 ```
 
 Remove docker and images
 ```
-docker stop $(docker ps -q)
-docker rm $(docker ps -a -q)
 docker rmi $(docker images -q)
 systemctl stop docker
 rm -fr /var/lib/docker/* 
