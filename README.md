@@ -169,11 +169,14 @@ systemctl disable firewalld
 systemctl stop firewalld
 ```
 
-If you do not want to disable firewall, you may need to open ports through the firewall. For Kubernetes, these two ports are required.
+If you do not want to disable firewall, you may need to open ports through the firewall. For Kubernetes, open the following.
 
 ```
 firewall-cmd --zone=public --add-port=6443/tcp --permanent
 firewall-cmd --zone=public --add-port=10250/tcp --permanent
+firewall-cmd --zone=public --add-service=http --permanent
+firewall-cmd --zone=public --add-service=https --permanent
+firewall-cmd --reload
 ```
 
 #### Disable swap
@@ -595,19 +598,20 @@ The following are optional and are not recommended. Skip to [this](#power-down-v
 Metrics server is required if we need to run `kubectl top` commands to show the metrics.
 
 ```
-helm install stable/metrics-server --name metrics --namespace kube-system --set fullnameOverride="metrics" --set hostNetwork.enabled=True
-```
-You may need to edit the deployment to add the insecure flag.
-```
-kubectl -n kube-system edit deploy metrics
-
-And, add the following to the /metrics-server arguments.
-
-        - --kubelet-insecure-tls
-        - --kubelet-preferred-address-types=InternalIP        
+helm install stable/metrics-server --name metrics --namespace kube-system --set fullnameOverride="metrics" --set args="{--logtostderr,--kubelet-insecure-tls,--kubelet-preferred-address-types=InternalIP\,ExternalIP\,Hostname}"
 ```
 
-This should return output.
+Make sure that the `v1beta1.metrics.k8s.io` service is available
+
+```
+$ kubectl get apiservice v1beta1.metrics.k8s.io
+NAME                     SERVICE               AVAILABLE   AGE
+v1beta1.metrics.k8s.io   kube-system/metrics   True        13m
+```
+
+If the service shows `FailedDiscoveryCheck` or `MissingEndpoints`, it might be the firewall issue. Make sure that https is enabled through the firewall.
+
+Run the following.
 ```
 kubectl get --raw "/apis/metrics.k8s.io/v1beta1/nodes"
 ```
