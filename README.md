@@ -118,6 +118,7 @@ This exercise is to use a single VM to build a Kubernetes environment having a m
 ```
 # Configure iptables for Kubernetes
 cat <<EOF >  /etc/sysctl.d/k8s.conf
+net.ipv4.ip_forward = 1
 net.bridge.bridge-nf-call-ip6tables = 1
 net.bridge.bridge-nf-call-iptables = 1
 EOF
@@ -204,7 +205,7 @@ Type `exit` to logout from root.
 
 ```
 sudo kubeadm config images pull
-sudo kubeadm init --pod-network-cidr=10.142.0.0/16 --apiserver-advertise-address=192.168.142.101 --apiserver-cert-extra-sans=192.168.142.101
+sudo kubeadm init --pod-network-cidr=10.142.0.0/16
 ```
 
 The output is as shown:
@@ -291,10 +292,10 @@ Choose proper version of Calico [Link](https://docs.projectcalico.org/v3.10/gett
 Calico 3.10 is tested with Kubernetes versions 1.14, 1.15 and 1.16
 
 ```
-POD_CIDR=10.142.0.0/16
-curl https://docs.projectcalico.org/v3.10/manifests/calico-policy-only.yaml -O
-sed -i -e "s?192.168.0.0/16?$POD_CIDR?g" calico-policy-only.yaml
-kubectl apply -f calico-policy-only.yaml
+export POD_CIDR=10.142.0.0/16
+curl https://docs.projectcalico.org/v3.10/manifests/calico.yaml -O
+sed -i -e "s?192.168.0.0/16?$POD_CIDR?g" calico.yaml
+kubectl apply -f calico.yaml
 ```
 
 Check the status of the cluster and wait for all pods to be in `Running` and `Ready 1/1` state.
@@ -348,6 +349,28 @@ However, you can use `kubectl` from a client machine to manage the Kubernetes en
 ```
 kubectl create -f https://k8s.io/examples/admin/dns/busybox.yaml
 ```
+
+## Install hostname deployment for sanity checks
+
+Create a deployment
+```
+kubectl run hostnames --image=k8s.gcr.io/serve_hostname \
+                        --labels=app=hostnames \
+                        --port=9376 \
+                        --replicas=3
+```
+
+Create a service
+
+```
+kubectl expose deployment hostnames --port=80 --target-port=9376
+```
+
+
+
+## Sanity check for the cluster
+
+[Check this link for testing the cluster](https://kubernetes.io/docs/tasks/debug-application-cluster/debug-service/)
 
 Check pod
 ```
@@ -521,13 +544,19 @@ options ndots:5
 Internal service name resolution.
 
 ```
-kubectl exec -it busybox -- nslookup dashboard.kube-system.svc.cluster.local
-
+$ kubectl exec -it busybox -- nslookup kube-dns.kube-system.svc.cluster.local
 Server:    10.96.0.10
 Address 1: 10.96.0.10 kube-dns.kube-system.svc.cluster.local
 
-Name:      dashboard.kube-system.svc.cluster.local
-Address 1: 10.106.11.211 dashboard.kube-system.svc.cluster.local
+Name:      kube-dns.kube-system.svc.cluster.local
+Address 1: 10.96.0.10 kube-dns.kube-system.svc.cluster.local
+
+$ kubectl exec -it busybox -- nslookup hostnames.default.svc.cluster.local
+Server:    10.96.0.10
+Address 1: 10.96.0.10 kube-dns.kube-system.svc.cluster.local
+
+Name:      hostnames.default.svc.cluster.local
+Address 1: 10.98.229.90 hostnames.default.svc.cluster.local
 ```
 
 Edit VM's `/etc/resolv.conf` to add Kubernetes DNS server
@@ -592,6 +621,19 @@ Click `Token` and paste the token from the clipboard (Right click and paste).
 You have Kubernetes 1.15.5 single node environment ready for you now. 
 
 The following are optional and are not recommended. Skip to [this](#power-down-vm).
+
+## Check if kube-prxy is OK. There must be two entries for the hostnames
+
+```
+sudo iptables-save | grep hostnames
+
+-A KUBE-SERVICES ! -s 10.142.0.0/16 -d 10.98.229.90/32 -p tcp -m comment --comment "default/hostnames: cluster IP" -m tcp --dport 80 -j KUBE-MARK-MASQ
+-A KUBE-SERVICES -d 10.98.229.90/32 -p tcp -m comment --comment "default/hostnames: cluster IP" -m tcp --dport 80 -j KUBE-SVC-NWV5X2332I4OT4T3
+[vikram@istio04 ~]$ sudo iptables-save | grep hostnames
+-A KUBE-SERVICES ! -s 10.142.0.0/16 -d 10.98.229.90/32 -p tcp -m comment --comment "default/hostnames: cluster IP" -m tcp --dport 80 -j KUBE-MARK-MASQ
+-A KUBE-SERVICES -d 10.98.229.90/32 -p tcp -m comment --comment "default/hostnames: cluster IP" -m tcp --dport 80 -j KUBE-SVC-NWV5X2332I4OT4T3
+```
+
 
 ## Install Metrics server (Optional)
 
@@ -749,10 +791,17 @@ rm -fr ~/.kube
 
 Remove docker and images
 ```
+docker rm -f $(docker ps -qa)
+docker volume rm $(docker volume ls -q)
 docker rmi $(docker images -q)
 systemctl stop docker
 rm -fr /var/lib/docker/* 
 yum -y remove docker-ce docker-ce-cli
+cleanupdirs="/var/lib/etcd /etc/kubernetes /etc/cni /opt/cni /var/lib/cni /var/run/calico"
+for dir in $cleanupdirs; do
+  echo "Removing $dir"
+  rm -rf $dir
+done
 ```
 
 ## Power down VM
