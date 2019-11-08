@@ -173,6 +173,8 @@ systemctl stop firewalld
 If you do not want to disable firewall, you may need to open ports through the firewall. For Kubernetes, open the following.
 
 ```
+systemctl enable firewalld
+systemctl start firewalld
 firewall-cmd --zone=public --add-port=6443/tcp --permanent
 firewall-cmd --zone=public --add-port=10250/tcp --permanent
 firewall-cmd --zone=public --add-service=http --permanent
@@ -229,8 +231,9 @@ Then you can join any number of worker nodes by running the following on each as
 kubeadm join 192.168.142.101:6443 --token 2u0en7.g1igrb2w54g9bts7 \
     --discovery-token-ca-cert-hash sha256:cae7cae0274175d680a683e464e2b5e6e82817dab32c4b476ba9a322434227bb 
 ```
+You can get the above token using `kubeadm token list` command.
 
-If you loose above `kubeadm join` command, a new token and hash can be generated as:
+You can also generate a new token using `kubeadm join` command.
 
 ```
 # kubeadm token create --print-join-command
