@@ -19,7 +19,7 @@ The `root` password in the VM is `password`. When you start VM, it will automati
 Login as root.
 
 ```
-sudo su -
+$ sudo su -
 ```
 
 Note: You can copy and paste command from here to the VM. You can use middle mouse button to paste the commands from the clipboard or press `Shift-Ctrl-V` to paste the contents from the clipboard to the command line shell.
@@ -28,12 +28,12 @@ Note: You can copy and paste command from here to the VM. You can use middle mou
 
 * Install `socat` - For Helm, `socat` is used to set the port forwarding for both the Helm client and Tiller.
     ```
-    yum -y install socat
+    # yum -y install socat
     ```
 * Set `SELINUX=disabled` in `/etc/selinux/config` and reboot for this to take effect. After reboot, you should get output from `getenforce` as `permissive`.
     ```
     # getenforce
-    Disbaled
+    Disabled
     ```
 * Add docker repo
 
@@ -42,13 +42,13 @@ Note: You can copy and paste command from here to the VM. You can use middle mou
     yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
     ```
 
-* Install docker. Since we will be working Kubernetes 1.15.5, the tested version of Docker for this release is 3:18.09.8-3.el7.
+* Install docker. Since we will be working Kubernetes 1.15.6, the tested version of Docker for this release is 3:18.09.8-3.el7.
 
 We will switch the docker `cgroup` driver from `cggroupfs` to `systemd`.
 
 ```
-mkdir -p /etc/docker
-cat > /etc/docker/daemon.json <<EOF
+# mkdir -p /etc/docker
+# cat > /etc/docker/daemon.json <<EOF
 {
   "exec-opts": ["native.cgroupdriver=systemd"],
   "log-driver": "json-file",
@@ -64,10 +64,10 @@ EOF
 * Tip: Find out available version using `yum --showduplicates list docker-ce`
 
 ```
-yum -y install docker-ce-cli-18.09.8-3.el7.x86_64
-yum -y install docker-ce-18.09.8-3.el7.x86_64
-systemctl enable docker
-systemctl start docker
+# yum -y install docker-ce-cli-18.09.8-3.el7.x86_64
+# yum -y install docker-ce-18.09.8-3.el7.x86_64
+# systemctl enable docker
+# systemctl start docker
 ```
 
 * Optionally: Configure a separate disk to mount `/var/lib/doocker` and restart docker.
@@ -101,7 +101,7 @@ Make sure that we have Docker `18.09.8` and not the higher version.
 Check if the storage driver is `overlay2` and the `CGroup` driver is `systemd`.
 
 ```
-docker info | grep -E "Cgroup|Storage Driver"
+# docker info | grep -E "Cgroup|Storage Driver"
 
 Storage Driver: overlay2
 Cgroup Driver: systemd
@@ -111,24 +111,26 @@ Cgroup Driver: systemd
 
 Note: You also have a choice to just use [minikube](https://kubernetes.io/docs/setup/learning-environment/minikube/). Though, by going through this exercise, you will know how to build your own Kuberenets environment.
 
-This exercise is to use a single VM to build a Kubernetes environment having a master node, etcd database, pod network using Calico and Helm. Refer to the above mentioned medium article if you want to build a multi-node cluster.
+This exercise is to use a single VM to build a Kubernetes environment having a master node, etcd database, pod network using Calico and Helm. Refer to the above mentioned article if you want to build a multi-node cluster.
 
 ### iptables for Kubernetes
 
+Configure iptables for Kubernetes
+
 ```
-# Configure iptables for Kubernetes
-cat <<EOF >  /etc/sysctl.d/k8s.conf
+# cat <<EOF >  /etc/sysctl.d/k8s.conf
 net.ipv4.ip_forward = 1
 net.bridge.bridge-nf-call-ip6tables = 1
 net.bridge.bridge-nf-call-iptables = 1
 EOF
-sysctl --system
+
+# sysctl --system
 ```
 
 ### Add Kubernetes repo
 
 ```
-cat << EOF >/etc/yum.repos.d/kubernetes.repo
+# cat << EOF >/etc/yum.repos.d/kubernetes.repo
 [kubernetes]
 name=Kubernetes
 baseurl=https://packages.cloud.google.com/yum/repos/kubernetes-el7-x86_64
@@ -147,39 +149,39 @@ At the time of this writing, Kubernetes 1.16.0 is the latest version and it has 
 Check available versions of packages
 
 ```
-yum --showduplicates list kubeadm
+# yum --showduplicates list kubeadm
 ```
 
-For example, we will be selecting `1.15.5-0`.
+For example, we will be selecting `1.15.6-0`.
 
 ```
-version=1.15.5-0
-yum install -y kubelet-$version kubeadm-$version kubectl-$version
+# version=1.15.6-0
+# yum install -y kubelet-$version kubeadm-$version kubectl-$version
 ```
 
 #### Enable `kubelet`
 
 ```
-systemctl enable kubelet
+# systemctl enable kubelet
 ```
 
 #### Disable firewalld
 
 ```
-systemctl disable firewalld
-systemctl stop firewalld
+# systemctl disable firewalld
+# systemctl stop firewalld
 ```
 
 If you do not want to disable firewall, you may need to open ports through the firewall. For Kubernetes, open the following.
 
 ```
-systemctl enable firewalld
-systemctl start firewalld
-firewall-cmd --zone=public --add-port=6443/tcp --permanent
-firewall-cmd --zone=public --add-port=10250/tcp --permanent
-firewall-cmd --zone=public --add-service=http --permanent
-firewall-cmd --zone=public --add-service=https --permanent
-firewall-cmd --reload
+# systemctl enable firewalld
+# systemctl start firewalld
+# firewall-cmd --zone=public --add-port=6443/tcp --permanent
+# firewall-cmd --zone=public --add-port=10250/tcp --permanent
+# firewall-cmd --zone=public --add-service=http --permanent
+# firewall-cmd --zone=public --add-service=https --permanent
+# firewall-cmd --reload
 ```
 
 #### Disable swap
@@ -187,7 +189,7 @@ firewall-cmd --reload
 Kuberenets does not like swap to be on.
 
 ```
-swapoff -a
+# swapoff -a
 ```
 
 Comment entry for swap in `/etc/fstab`. Example:
@@ -205,9 +207,29 @@ Type `exit` to logout from root.
 # exit
 ```
 
+Pull Kubernetes images - this may take a while on a slow internet connection.
+
 ```
-sudo kubeadm config images pull
-sudo kubeadm init --pod-network-cidr=10.142.0.0/16
+$ sudo kubeadm config images pull
+```
+
+You can check the images pulled by above command.
+```
+$ sudo docker images k8s.gcr.io/*
+REPOSITORY                           TAG                 IMAGE ID            CREATED             SIZE
+k8s.gcr.io/kube-proxy                v1.15.6             d756327a2327        4 days ago          82.4MB
+k8s.gcr.io/kube-apiserver            v1.15.6             9f612b9e9bbf        4 days ago          207MB
+k8s.gcr.io/kube-controller-manager   v1.15.6             83ab61bd43ad        4 days ago          159MB
+k8s.gcr.io/kube-scheduler            v1.15.6             502e54938456        4 days ago          81.1MB
+k8s.gcr.io/coredns                   1.3.1               eb516548c180        10 months ago       40.3MB
+k8s.gcr.io/etcd                      3.3.10              2c4adeb21b4f        11 months ago       258MB
+k8s.gcr.io/pause                     3.1                 da86e6ba6ca1        23 months ago       742kB
+```
+
+Build Kubernetes master node
+
+```
+$ sudo kubeadm init --pod-network-cidr=10.142.0.0/16
 ```
 
 The output is as shown:
@@ -237,7 +259,8 @@ You can also generate a new token using `kubeadm join` command.
 
 ```
 # kubeadm token create --print-join-command
-kubeadm join 192.168.142.101:6443 --token 1denfs.nw73pkobgksk0ej9     --discovery-token-ca-cert-hash sha256:cae7cae0274175d680a683e464e2b5e6e82817dab32c4b476ba9a322434227bb
+
+# kubeadm join 192.168.142.101:6443 --token 1denfs.nw73pkobgksk0ej9     --discovery-token-ca-cert-hash sha256:cae7cae0274175d680a683e464e2b5e6e82817dab32c4b476ba9a322434227bb
 ```
 
 Since we will be using a single VM, the Kubernetes token from above is for reference purpose only. You will require the above token command in you require a multi-node Kubernetes cluster.
@@ -247,23 +270,24 @@ Since we will be using a single VM, the Kubernetes token from above is for refer
 Run the following command as `user` and `root` to configure `kubectl` command line CLI tool to communicate with the Kubernetes environment.
 
 ```
-mkdir -p $HOME/.kube
-sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
-sudo chown $(id -u):$(id -g) $HOME/.kube/config
+$ mkdir -p $HOME/.kube
+$ sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+$ sudo chown $(id -u):$(id -g) $HOME/.kube/config
 ```
 
 Check Kubernetes version
 
 ```
 $ kubectl version --short
-Client Version: v1.15.5
-Server Version: v1.15.5
+
+Client Version: v1.15.6
+Server Version: v1.15.6
 ```
 
 Untaint the node - this is required since we have only one VM to install objects.
 
 ```
-kubectl taint nodes --all node-role.kubernetes.io/master-
+$ kubectl taint nodes --all node-role.kubernetes.io/master-
 ```
 
 Check node status and note that it is not yet ready since we have not yet installed a pod network
@@ -271,10 +295,12 @@ Check node status and note that it is not yet ready since we have not yet instal
 ```
 $ kubectl get nodes
 NAME    STATUS     ROLES    AGE   VERSION
-osc01   NotReady   master   95s   v1.15.5
+osc01   NotReady   master   95s   v1.15.6
 ```
 
-Check pod status in `kube-system` and you will notice that `coredns` pods are in pending state since pod network has not yet been installed.
+Check pod status in `kube-system` and you will notice that `coredns` pods are in pending state. This is due to the fact that we have not yet installed the pod network. 
+
+Make sure that `etcd`, `kube-apiserver`  , `kube-controller-manager`, `kube-proxy` and `kube-scheduler` pods are showing READY state `1/1` and Status `Runnning`.
 
 ```
 $ kubectl get pods -A
@@ -295,10 +321,22 @@ Choose proper version of Calico [Link](https://docs.projectcalico.org/v3.10/gett
 Calico 3.10 is tested with Kubernetes versions 1.14, 1.15 and 1.16
 
 ```
-export POD_CIDR=10.142.0.0/16
-curl https://docs.projectcalico.org/v3.10/manifests/calico.yaml -O
-sed -i -e "s?192.168.0.0/16?$POD_CIDR?g" calico.yaml
-kubectl apply -f calico.yaml
+$ export POD_CIDR=10.142.0.0/16
+$ curl https://docs.projectcalico.org/v3.10/manifests/calico.yaml -O
+$ sed -i -e "s?192.168.0.0/16?$POD_CIDR?g" calico.yaml
+$ kubectl apply -f calico.yaml
+```
+
+It may take a while to pull Calico images over the slow network.
+
+Check docker images being pulled.
+```
+$ sudo docker images calico/*
+REPOSITORY                  TAG                 IMAGE ID            CREATED             SIZE
+calico/node                 v3.10.1             4a88ba569c29        11 days ago         192MB
+calico/cni                  v3.10.1             4f761b4ba7f5        11 days ago         163MB
+calico/kube-controllers     v3.10.1             8f87d09ab811        11 days ago         50.6MB
+calico/pod2daemon-flexvol   v3.10.1             5b249c03bee8        11 days ago         9.78MB
 ```
 
 Check the status of the cluster and wait for all pods to be in `Running` and `Ready 1/1` state.
@@ -332,13 +370,13 @@ osc01   Ready    master   5m28s   v1.15.0    192.168.142.101   ---
 ## Create an admin account
 
 ```
-kubectl --namespace kube-system create serviceaccount admin
+$ kubectl --namespace kube-system create serviceaccount admin
 ```
 
 Grant Cluster Role Binding to the `admin` account
 
 ```
-kubectl create clusterrolebinding admin --serviceaccount=kube-system:admin --clusterrole=cluster-admin
+$ kubectl create clusterrolebinding admin --serviceaccount=kube-system:admin --clusterrole=cluster-admin
 ```
 
 ## Install kubectl on client machines
@@ -350,7 +388,7 @@ However, you can use `kubectl` from a client machine to manage the Kubernetes en
 ## Install busybox to check
 
 ```
-kubectl create -f https://k8s.io/examples/admin/dns/busybox.yaml
+$ kubectl create -f https://k8s.io/examples/admin/dns/busybox.yaml
 ```
 
 ## Install hostname deployment for sanity checks
@@ -366,7 +404,7 @@ kubectl run hostnames --image=k8s.gcr.io/serve_hostname \
 Create a service
 
 ```
-kubectl expose deployment hostnames --port=80 --target-port=9376
+$ kubectl expose deployment hostnames --port=80 --target-port=9376
 ```
 
 
@@ -384,24 +422,27 @@ busybox   1/1     Running   0          13s
 
 ## Install helm and tiller 
 
-Starting with Helm 3, the tiller will not be required. However, we will be installing Helm v2.15.2
+Starting with Helm 3, the tiller will not be required. We will be using Helm 2.x related charts, so we will not be installing Helm 3.x until charts are migrated to Helm 3.x. 
+
+Since Helm charts that we are going to use still However, we will be installing Helm v2.16.1
 
 In principle tiller can be installed using `helm init`.
 
 ```
-curl -s https://storage.googleapis.com/kubernetes-helm/helm-v2.15.2-linux-amd64.tar.gz | tar xz
+$ curl -s https://storage.googleapis.com/kubernetes-helm/helm-v2.16.1-linux-amd64.tar.gz | tar xz
 
-cd linux-amd64
-sudo mv helm /bin
+$ cd linux-amd64
+$ sudo mv helm /bin
 ```
 
 Create `tiller` service accoun and grant cluster admin to the `tiller` service account.
 
 ```
-kubectl -n kube-system create serviceaccount tiller
+$ kubectl -n kube-system create serviceaccount tiller
 
-kubectl create clusterrolebinding tiller --clusterrole cluster-admin --serviceaccount=kube-system:tiller
+$ kubectl create clusterrolebinding tiller --clusterrole cluster-admin --serviceaccount=kube-system:tiller
 ```
+
 Helm can be installed with and without security. If no security is required (like demo/test environment), follow Option - 1 or follow option - 2 to install helm with security.
 
 ### Option - 1 : No security, ideal for running in a sandbox environment.
@@ -409,16 +450,18 @@ Helm can be installed with and without security. If no security is required (lik
 Initialize the `helm` and it will install `tiller` server in Kubernetes.
 
 ```
-helm init --service-account tiller
+$ helm init --service-account tiller
 ```
+
+Wait for tiller to get deployed. (check `kubectl get pods -A`)
 
 Check helm version
 
 ```
-helm version --short
+$ helm version --short
 
-Client: v2.15.2+g8dce272
-Server: v2.15.2+g8dce272
+Client: v2.16.1+gbbdfe5e
+Server: v2.16.1+gbbdfe5e
 ```
 
 If you installed helm without secruity, skip to the [next](#Install-Kubernetes-dashboard) section.
@@ -479,7 +522,7 @@ local 	http://127.0.0.1:8879/charts
 Install kubernetes dashboard helm chart
 
 ```
-helm install stable/kubernetes-dashboard --name k8web --namespace kube-system --set fullnameOverride="dashboard"
+$ helm install stable/kubernetes-dashboard --name k8web --namespace kube-system --set fullnameOverride="dashboard"
 
 Note: add --tls above if using secure helm
 ```
@@ -537,7 +580,7 @@ kubectl -n kube-system patch svc dashboard --type='json' -p '[{"op":"replace","p
 Check the internal DNS server
 
 ```
-kubectl exec -it busybox -- cat /etc/resolv.conf
+$ kubectl exec -it busybox -- cat /etc/resolv.conf
 
 nameserver 10.96.0.10
 search default.svc.cluster.local svc.cluster.local cluster.local servicemesh.local
@@ -609,7 +652,7 @@ Highlight the authentication token from your screen, right click to copy to the 
 Find out the node port for the `dashboard` service.
 
 ```
-kubectl get svc -n kube-system
+$ kubectl get svc -n kube-system
 
 NAME            TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)         AGE
 dashboard       NodePort    10.102.12.203   <none>        443:31869/TCP   2m7s
@@ -621,11 +664,13 @@ Doubleclick Google Chrome from the desktop of the VM and run https://localhost:3
 
 Click `Token` and paste the token from the clipboard (Right click and paste).
 
-You have Kubernetes 1.15.5 single node environment ready for you now. 
+You have Kubernetes 1.15.6 single node environment ready for you now. 
 
 The following are optional and are not recommended. Skip to [this](#power-down-vm).
 
-## Check if kube-prxy is OK. There must be two entries for the hostnames
+## Check if kube-proxy is OK
+
+There must be two entries for the hostnames
 
 ```
 sudo iptables-save | grep hostnames
@@ -654,13 +699,15 @@ NAME                     SERVICE               AVAILABLE   AGE
 v1beta1.metrics.k8s.io   kube-system/metrics   True        13m
 ```
 
-If the service shows `FailedDiscoveryCheck` or `MissingEndpoints`, it might be the firewall issue. Make sure that https is enabled through the firewall.
+If the service shows `FailedDiscoveryCheck` or `MissingEndpoints`, it might be the firewall issue. Make sure that `https` is enabled through the firewall.
+
+If the AVAILLABLE shows `False (MissingEndpoints)`, wait for the end points to become available. Try above command again and make sure that the AVAILABLE shows `True` for the api service `v1beta1.metrics.k8s.io`.
 
 Run the following.
 ```
 kubectl get --raw "/apis/metrics.k8s.io/v1beta1/nodes"
 ```
-Wait for few minutes, `kubectl top nodes` and `kubectl top pods -A` should show output.
+Wait for a few minutes, `kubectl top nodes` and `kubectl top pods -A` should show output.
 
 
 
@@ -784,23 +831,24 @@ kubectl delete node <node name>
 Remove kubeadm
 
 ```
-systemctl stop kubelet
-kubeadm reset
-iptables -F && iptables -t nat -F && iptables -t mangle -F && iptables -X
-yum -y remove kubeadm kubectl kubelet kubernetes-cni kube*
+sudo systemctl stop kubelet
+sudo kubeadm reset
+sudo iptables -F && iptables -t nat -F && iptables -t mangle -F && iptables -X
+sudo yum -y remove kubeadm kubectl kubelet kubernetes-cni kube*
 
 rm -fr ~/.kube
 ```
 
 Remove docker and images
 ```
+sudo su -
 docker rm -f $(docker ps -qa)
 docker volume rm $(docker volume ls -q)
 docker rmi $(docker images -q)
 systemctl stop docker
 rm -fr /var/lib/docker/* 
 yum -y remove docker-ce docker-ce-cli
-cleanupdirs="/var/lib/etcd /etc/kubernetes /etc/cni /opt/cni /var/lib/cni /var/run/calico"
+cleanupdirs="/var/lib/etcd /etc/kubernetes /etc/cni /opt/cni /var/lib/cni /var/run/calico /var/lib/kubelet"
 for dir in $cleanupdirs; do
   echo "Removing $dir"
   rm -rf $dir
