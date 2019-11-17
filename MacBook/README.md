@@ -23,12 +23,19 @@ After installation of the VMware Fusion, set the NAT `vmnet` subnet so that the 
 Open a command line shell in your MacBook and run following commands.
 
 ```
-$ sudo su - <type your password>
+$ sudo -i 
+<type your password>
 
 # vi /Library/Preferences/VMware\ Fusion/networking
 ```
 
-Modify line having VMNET_8_HOSTONLY_SUBNET to anwwer VMNET_8_HOSTONLY_SUBNET 192.168.142.0 so that it matches with the vmnet8 address that we are using inside the VM. Save the file.
+Modify line having `VMNET_8_HOSTONLY_SUBNET` to match as shown below
+
+```
+ anwwer VMNET_8_HOSTONLY_SUBNET 192.168.142.0
+```
+
+Save the file.
 
 #### Fix Gateway for vmnet8
 
@@ -38,9 +45,10 @@ Modify file `/Library/Preferences/VMware\ Fusion/vmnet8/nat.conf`
 # vi /Library/Preferences/VMware\ Fusion/vmnet8/nat.conf
 ```
 
-And change `ip` and `netmask` after comment `# NAT gateway address`
+And change `ip` and `netmask` after comment
 
 ```
+# NAT gateway address
 ip = 192.168.142.2
 netmask = 255.255.255.0
 ```
@@ -49,9 +57,9 @@ netmask = 255.255.255.0
 ```
 # cd /Applications/VMware\ Fusion.app/Contents/Library/
 
-# vmnet-cli --configure
-# vmnet-cli --stop
-# vmnet-cli --start
+# ./vmnet-cli --configure
+# ./vmnet-cli --stop
+# ./vmnet-cli --start
 ```
 
 ## Download 7z software 
