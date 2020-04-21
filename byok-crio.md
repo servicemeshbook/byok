@@ -1,6 +1,6 @@
 # Build your own Kubernetes cluster in a single VM using CRI-O
 
-This guide is based upon an [article](https://kubevirt.io/2019/KubeVirt_k8s_crio_from_scratch.html) written by `Pedro Ibáñez Requena`
+In this guide, we will build Kubernetes 1.16.9 using CRI-O.
 
 ## Prerequisites - Download base VM
 
@@ -25,29 +25,93 @@ Note: You can copy and paste command from here to the VM. You can use middle mou
 
 ## Prerequisites
 
-* Install `socat` - For Helm, `socat` is used to set the port forwarding for both the Helm client and Tiller.
-    ```
-    yum -y install socat
-    ```
-* Set `SELINUX=disabled` in `/etc/selinux/config` and reboot for this to take effect. After reboot, you should get output from `getenforce` as `disabled`.
-    ```
+### Internet Access
+
+Make sure that you have access to Internet from inside the VM
+```
+dig +search +noall +answer google.com
+```
+
+Set `SELINUX=disabled` in `/etc/selinux/config` and reboot for the VM to take effect. After reboot, you should get output from `getenforce` as `disabled`.
+
+```
     # getenforce
     Disabled
-    ```
+```
 
-## Build Kubernetes using CRI-O
+## Enable firewall
 
-## Install CRI-O
+Run as root
 
-Build CRI-O from source
+You may not need firewall in a VM for testing purposes. But, it should be used in actual systems.
 
-Add kernel modules
+```
+systemctl enable NetworkManager
+systemctl start NetworkManager
+systemctl status NetworkManager
+
+systemctl enable firewalld
+systemctl start firewalld
+
+firewall-cmd --zone=public --change-interface=eth0
+
+## kube-apiserver
+firewall-cmd --zone=public --add-port=6443/tcp --permanent
+firewall-cmd --zone=public --add-port=10250/tcp --permanent
+firewall-cmd --zone=public --add-port=10251/tcp --permanent
+firewall-cmd --zone=public --add-port=10252/tcp --permanent
+firewall-cmd --zone=public --add-port=10255/tcp --permanent
+
+firewall-cmd --zone=public --add-service=http --permanent
+firewall-cmd --zone=public --add-service=https --permanent
+
+## Calico
+firewall-cmd --zone=public --add-port=179/tcp --permanent
+firewall-cmd --zone=public --add-port=5473/tcp --permanent
+firewall-cmd --zone=public --add-port=4789/tcp --permanent
+
+## etcd
+firewall-cmd --zone=public --add-port=2379/tcp --permanent
+firewall-cmd --zone=public --add-port=2380/tcp --permanent
+
+## nodeport
+firewall-cmd --zone=public --add-port=30000-32767/tcp --permanent
+
+## load balancer for level 7 routing
+firewall-cmd --zone=public --add-port=56501/tcp --permanent
+
+firewall-cmd --reload
+firewall-cmd --info-zone=public
+firewall-cmd --list-all --zone=public
+```
+
+## Fix kernel param for Kubernetes
+
+Run as root
+
+```
+cat <<EOF >  /etc/sysctl.d/k8s.conf
+net.netfilter.nf_conntrack_max = 1000000
+net.ipv4.ip_forward = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.bridge.bridge-nf-call-iptables = 1
+net.bridge.bridge-nf-call-arptables = 1
+EOF
+
+sysctl --system
+```
+
+## Add kernel modules
+
+Run as root
 
 ```
 modprobe br_netfilter
+echo '1' > /proc/sys/net/bridge/bridge-nf-call-iptables
 echo br_netfilter > /etc/modules-load.d/br_netfilter.conf
 modprobe overlay
 echo overlay > /etc/modules-load.d/overlay.conf
+modprobe br_netfilter
 ```
 
 Disable `selinux`
@@ -56,20 +120,28 @@ setenforce 0
 sed -i 's/^SELINUX=enforcing$/SELINUX=permissive/' /etc/selinux/config
 ```
 
-Install required packages to build cri-o from source
+## Install crio from build repos
 
+Run as root
+
+Remove default `runc` from VM
+
+```
+yum -y erase runc
+```
+
+### Install dependencies
 ```
 yum install btrfs-progs-devel container-selinux device-mapper-devel gcc git glib2-devel glibc-devel glibc-static gpgme-devel json-glib-devel libassuan-devel libgpg-error-devel libseccomp-devel make pkgconfig skopeo-containers tar wget -y
 
 yum install golang-github-cpuguy83-go-md2man golang -y
 ```
 
-Create directories
+### Create directories
 ```
 for d in "/usr/local/go /etc/systemd/system/kubelet.service.d/ /var/lib/etcd /etc/cni/net.d /etc/containers"; do mkdir -p $d; done
 ```
-
-Clone runc, cri-o, cni and conmon repos
+### Clone runc, cri-o, cni and conmon repos
 ```
 git clone https://github.com/opencontainers/runc /root/src/github.com/opencontainers/runc
 git clone https://github.com/cri-o/cri-o /root/src/github.com/cri-o/cri-o
@@ -77,16 +149,25 @@ git clone https://github.com/containernetworking/plugins /root/src/github.com/co
 git clone http://github.com/containers/conmon /root/src/github.com/conmon
 ```
 
-Build runc
+### Build runc
 ```
 cd /root/src/github.com/opencontainers/runc
 export GOPATH=/root
 make BUILDTAGS="seccomp selinux"
 make install
 ln -sf /usr/local/sbin/runc /usr/bin/runc
+
+
+runc --version
 ```
 
-Build cri-o
+```
+runc version 1.0.0-rc10+dev
+commit: bf0a8e17471347407fe9e856d4f3ff61beaf2fea
+spec: 1.0.2
+```
+
+### Build cri-o
 ```
 export GOPATH=/root
 export GOBIN=/usr/local/go/bin
@@ -99,14 +180,16 @@ make install.systemd
 make install.config
 ```
 
-Build conmon for cri-o container monitoring
+### Build conmon for cri-o container monitoring
+
 ```
 cd /root/src/github.com/conmon
 make
 make install
 ```
 
-Build cni plugin
+### Build cni plugin
+
 ```
 cd /root/src/github.com/containernetworking/plugins
 ./build_linux.sh
@@ -114,44 +197,60 @@ mkdir -p /opt/cni/bin
 cp bin/* /opt/cni/bin/
 ```
 
-Make sure that `cgroup_manager` is set to `cgroupfs` in `/etc/crio/crio.conf`
+### Fix /etc/crio/crio.conf
+
+List contents
 ```
-sed -i 's/cgroup_manager =.*/cgroup_manager = "cgroupfs"/g' /etc/crio/crio.conf
+sed -e "/^#.*$/d" -e "/^$/d" /etc/crio/crio.conf
+```
+
+Set cgroup_manager to systemd in /etc/crio/crio.conf
+
+```
+sed -i 's/cgroup_manager =.*/cgroup_manager = "systemd"/g' /etc/crio/crio.conf
 grep cgroup_manager /etc/crio/crio.conf
 ```
 
-Make sure that `storage_driver` is set to `overlay2`
+### Set storage_driver is set overlay2
+
 ```
 sed -i 's/#storage_driver =.*/storage_driver = "overlay2"/g' /etc/crio/crio.conf
 grep storage_driver /etc/crio/crio.conf
 ```
 
-Edit `/etc/crio/crio.conf` and uncomment `storage_option` and make it `storage_option = [ "overlay2.override_kernel_check=1" ]` 
+Uncomment `storage_option` and make it `storage_option = [ "overlay2.override_kernel_check=1" ]`
 
-Delete line after `storage_option` option
+Delete line after storage_option option
+
 ```
 sed -ie '/#storage_option =/{n;d}' /etc/crio/crio.conf
 ```
+
 Uncomment and add the value
+
 ```
 sed -i 's/#storage_option =.*/storage_option = [ "overlay2.override_kernel_check=1" ]/g' /etc/crio/crio.conf
 grep storage_option /etc/crio/crio.conf
 ```
 
-Change `network_dir` to `/etc/crio/net.d` since `kubeadm reset` empties `/etc/cni/net.d`
+Change network_dir to `/etc/crio/net.d` since `kubeadm reset` empties `/etc/cni/net.d`
+
 ```
 sed -i 's~network_dir =.*~network_dir = "/etc/crio/net.d/"~g' /etc/crio/crio.conf
 grep network_dir /etc/crio/crio.conf
 ```
 
-Create entries in `/etc/crio/net.d`
+### Create entries in /etc/crio/net.d
+
 ```
 mkdir -p /etc/crio/net.d
 cd /etc/crio/net.d/
-wget https://raw.githubusercontent.com/cri-o/cri-o/master/contrib/cni/10-crio-bridge.conf
+cp /root/src/github.com/cri-o/cri-o/contrib/cni/10-crio-bridge.conf .
+cat 10-crio-bridge.conf
 ```
 
-Get the policy.json file
+### Get the policy.json file
+
 ```
 cat << EOF > /etc/containers/policy.json
 {
@@ -167,66 +266,89 @@ cat << EOF > /etc/containers/policy.json
 EOF
 ```
 
-Add extra params to `kubelet` service
+### Add extra params to kubelet service
+
 ```
-cat << EOF > /etc/default/kubelet
-KUBELET_EXTRA_ARGS=--feature-gates="AllAlpha=false,RunAsGroup=true" --container-runtime=remote --cgroup-driver=cgroupfs --container-runtime-endpoint='unix:///var/run/crio/crio.sock' --runtime-request-timeout=5m
+cat << EOF > /etc/sysconfig/kubelet
+KUBELET_EXTRA_ARGS=--feature-gates="AllAlpha=false,RunAsGroup=true" --container-runtime=remote --cgroup-driver=systemd --container-runtime-endpoint='unix:///var/run/crio/crio.sock' --runtime-request-timeout=5m
 EOF
 ```
 
-Reload systemd daemon
-```
-systemctl daemon-reload
-```
+### Start crio
 
-Enable and start crio
 ```
 systemctl enable crio
 systemctl start crio
-systemctl status crio
 ```
 
-
-Version of CRI-O
-
-```
-# crio --version
-crio version 1.16.0
-commit: "40fa905d9d4ad1a4a73f7a3cc512669d06bd184e-dirty"
-```
-
-Install cri-tools (Make sure to download corresponding version)
+### Version of CRI-O
 
 ```
-VERSION="v1.16.0"
+crio --version
+```
+
+```
+crio version 1.16.6
+commit: "5fb673830826e05bb3d325c0b85a62f673ba05d5-dirty"
+```
+
+### Download cri-tools
+
+Read first to make sure which Kubernetes version is in which branch https://github.com/kubernetes-sigs/cri-tools
+
+Version 18 is compatible with Kubernets 1.16, 1.17 and 1.18
+
+Link https://github.com/kubernetes-sigs/cri-tools/releases/download/v1.18.0/crictl-v1.18.0-linux-amd64.tar.gz
+
+```
+cd
+VERSION="v1.18.0"
 curl -L https://github.com/kubernetes-sigs/cri-tools/releases/download/$VERSION/crictl-${VERSION}-linux-amd64.tar.gz --output crictl-${VERSION}-linux-amd64.tar.gz
-sudo tar zxvf crictl-$VERSION-linux-amd64.tar.gz -C /usr/local/bin
+tar zxvf crictl-$VERSION-linux-amd64.tar.gz -C /usr/local/bin
 rm -f crictl-$VERSION-linux-amd64.tar.gz
+
+rm -f /usr/bin/crictl
+ln -sf /usr/local/bin/crictl /usr/bin/crictl
+```
+Find out version
+
+```
+crictl --version
 ```
 
-Version of crictl
 ```
-# crictl --version
+crictl version v1.18.0
+```
 
-crictl version v1.16.0
+## Install podman
+
+Do not use `yum -y install podman` as it will download older version from CentOS repos.
+
+Run as root
+
+```
+curl -L -o /etc/yum.repos.d/devel:kubic:libcontainers:stable.repo https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/CentOS_7/devel:kubic:libcontainers:stable.repo
+
+yum -y install podman
+
+podman --version
+```
+
+```
+podman version 1.9.0
+```
+
+For podman, remove metacopy from /etc/containers/storage.conf for older kernels.
+
+```
+sed -i 's/mountopt =.*/mountopt = "nodev"/g' /etc/containers/storage.conf
+grep mountopt /etc/containers/storage.conf
 ```
 
 ## Build Kubernetes using one VM
 
 We will use the same version for Kubernetes as we used for crio
 
-### iptables for Kubernetes
-
-```
-# Configure iptables for Kubernetes
-cat <<EOF >  /etc/sysctl.d/k8s.conf
-net.ipv4.ip_forward = 1
-net.bridge.bridge-nf-call-ip6tables = 1
-net.bridge.bridge-nf-call-iptables = 1
-net.bridge.bridge-nf-call-arptables = 1
-EOF
-sysctl --system
-```
 
 ### Add Kubernetes repo
 
@@ -253,10 +375,10 @@ Check available versions of packages
 yum --showduplicates list kubeadm
 ```
 
-For example, we will be selecting `1.16.2-0`.
+For example, we will be selecting `1.16.9-0` matching with `crio --version`
 
 ```
-version=1.16.2-0
+version=1.16.9-0
 yum install -y kubelet-$version kubeadm-$version kubectl-$version
 ```
 
@@ -264,25 +386,6 @@ Restart crio and enable kubelet
 ```
 systemctl restart crio
 systemctl enable --now kubelet
-```
-
-#### Disable firewalld
-
-```
-systemctl disable firewalld
-systemctl stop firewalld
-```
-
-If you do not want to disable firewall, you may need to open ports through the firewall. For Kubernetes, open the following.
-
-```
-systemctl enable firewalld
-systemctl start firewalld
-firewall-cmd --zone=public --add-port=6443/tcp --permanent
-firewall-cmd --zone=public --add-port=10250/tcp --permanent
-firewall-cmd --zone=public --add-service=http --permanent
-firewall-cmd --zone=public --add-service=https --permanent
-firewall-cmd --reload
 ```
 
 #### Disable swap
@@ -296,7 +399,12 @@ swapoff -a
 Comment entry for swap in `/etc/fstab`. Example:
 
 ```
-#/dev/mapper/centos-swap swap                    swap    defaults        0 0
+sed -i '/ swap / s/^/#/' /etc/fstab
+```
+
+Make sure that it was commented.
+```
+cat /etc/fstab
 ```
 
 ### Run kubeadm
@@ -304,8 +412,12 @@ Comment entry for swap in `/etc/fstab`. Example:
 We will use same CIDR as it is defined in the CRI-O.
 
 ```
-# cat /etc/crio/net.d/10-crio-bridge.conf | grep subnet
-        "subnet": "10.88.0.0/16",
+cat /etc/crio/net.d/10-crio-bridge.conf | grep subnet
+```
+
+```
+            [{ "subnet": "10.88.0.0/16" }],
+            [{ "subnet": "1100:200::/24" }]
 ```
 
 
@@ -316,38 +428,58 @@ Type `exit` to logout from root.
 # exit
 ```
 
+Run as user and not as root
+
+Pull images
+
 ```
-sudo kubeadm config images pull
-sudo kubeadm init --pod-network-cidr=10.88.0.0/16
+sudo kubeadm config images pull --kubernetes-version=1.16.9
 ```
+
+Bootstrap master node
+
+You will need an external load balancer (DNS name pointing to an IP address that can load balance between 3 masters.) We are not using 3 masters but a single VM. The use of a DNS name is shown as that is necessary to build HA cluster.
+
+```
+eth0ip=$(ip addr show eth0 | grep "inet\b" | awk '{print $2}' | cut -d/ -f1)
+
+sudo kubeadm init --kubernetes-version=1.16.9 --pod-network-cidr=10.88.0.0/16 --apiserver-advertise-address=$eth0ip --node-name $(hostname) 
+```
+
+Add `--control-plane-endpoint "DNS:port"` when using an external load balancer to route traffic to the master node
+
+When apiserver needs to be started using interal IP address, which in this case is eth0 IP of the VM.
 
 The output is as shown:
 
-```
-<< removed >>
 Your Kubernetes control-plane has initialized successfully!
 
 To start using your cluster, you need to run the following as a regular user:
-
+```
   mkdir -p $HOME/.kube
   sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
   sudo chown $(id -u):$(id -g) $HOME/.kube/config
+```
 
-You should now deploy a pod network to the cluster.
-Run "kubectl apply -f [podnetwork].yaml" with one of the options listed at:
-  https://kubernetes.io/docs/concepts/cluster-administration/addons/
-
+You can now join any number of control-plane nodes by copying certificate authorities
+and service account keys on each node and then running the following as root:
+```
+  kubeadm join kb.zinox.com:6443 --token nk48jp.owcrixph3wgxai8l \
+    --discovery-token-ca-cert-hash sha256:2a75151fcf9552859fac6ed4b32aecfbcf1fd02143ef237392b3feca4a3ab6eb \
+    --control-plane
+```
 Then you can join any number of worker nodes by running the following on each as root:
-
-kubeadm join 192.168.142.101:6443 --token 2u0en7.g1igrb2w54g9bts7 \
-    --discovery-token-ca-cert-hash sha256:cae7cae0274175d680a683e464e2b5e6e82817dab32c4b476ba9a322434227bb 
 ```
+kubeadm join kb.zinox.com:6443 --token nk48jp.owcrixph3wgxai8l \
+    --discovery-token-ca-cert-hash sha256:2a75151fcf9552859fac6ed4b32aecfbcf1fd02143ef237392b3feca4a3ab6eb
+```    
 
-If you loose above `kubeadm join` command, a new token and hash can be generated as:
+The token is time bound and if you neeed to use `kubeadm join` later, a new token and hash can be generated as:
 
 ```
-# kubeadm token create --print-join-command
-kubeadm join 192.168.142.101:6443 --token 1denfs.nw73pkobgksk0ej9     --discovery-token-ca-cert-hash sha256:cae7cae0274175d680a683e464e2b5e6e82817dab32c4b476ba9a322434227bb
+$ sudo kubeadm token create --print-join-command
+sudo kubeadm token create --print-join-command
+kubeadm join kb.zinox.com:6443 --token 6bhq1s.zpqiuqxv4h6gb1xv     --discovery-token-ca-cert-hash sha256:2a75151fcf9552859fac6ed4b32aecfbcf1fd02143ef237392b3feca4a3ab6eb
 ```
 
 Since we will be using a single VM, the Kubernetes token from above is for reference purpose only. You will require the above token command in you require a multi-node Kubernetes cluster.
@@ -365,9 +497,11 @@ sudo chown $(id -u):$(id -g) $HOME/.kube/config
 Check Kubernetes version
 
 ```
-$ kubectl version --short
-Client Version: v1.16.2
-Server Version: v1.16.2
+kubectl version --short
+```
+```
+Client Version: v1.16.9
+Server Version: v1.16.9
 ```
 
 Untaint the node - this is required since we have only one VM to install objects.
@@ -380,61 +514,91 @@ Check node status
 
 ```
 $ kubectl get nodes
-NAME            STATUS   ROLES    AGE   VERSION
-okd.zinox.com   Ready    master   15m   v1.16.2
+NAME            STATUS   ROLES    AGE     VERSION
+ocp.zinox.com   Ready    master   5m40s   v1.16.9
 ```
 
 Check pod status in `kube-system` and you will notice that `coredns` pods are in pending state since pod network has not yet been installed.
 
 ```
-$ $ kubectl get pods -A
+$ kubectl get pods -A
 NAMESPACE     NAME                                    READY   STATUS    RESTARTS   AGE
-kube-system   coredns-5644d7b6d9-6s25d                1/1     Running   0          15m
-kube-system   coredns-5644d7b6d9-9m5gt                1/1     Running   0          15m
-kube-system   etcd-okd.zinox.com                      1/1     Running   0          14m
-kube-system   kube-apiserver-okd.zinox.com            1/1     Running   0          14m
-kube-system   kube-controller-manager-okd.zinox.com   1/1     Running   0          14m
-kube-system   kube-proxy-zlngl                        1/1     Running   0          15m
-kube-system   kube-scheduler-okd.zinox.com            1/1     Running   0          14m
+kube-system   coredns-5644d7b6d9-clklv                1/1     Running   0          5m32s
+kube-system   coredns-5644d7b6d9-kv5kr                1/1     Running   0          5m32s
+kube-system   etcd-ocp.zinox.com                      1/1     Running   0          4m39s
+kube-system   kube-apiserver-ocp.zinox.com            1/1     Running   0          4m44s
+kube-system   kube-controller-manager-ocp.zinox.com   1/1     Running   0          4m40s
+kube-system   kube-proxy-dcvvx                        1/1     Running   0          5m32s
+kube-system   kube-scheduler-ocp.zinox.com            1/1     Running   0          4m39s
+```
+
+### Sanity check - if you can deploy a pod
+
+```
+kubectl create -f https://k8s.io/examples/admin/dns/busybox.yaml
+```
+
+```
+kubectl get pods
+```
+```
+NAME      READY   STATUS    RESTARTS   AGE
+busybox   1/1     Running   0          7s
 ```
 
 ## Install Calico network for pods
 
-Choose proper version of Calico [Link](https://docs.projectcalico.org/v3.10/getting-started/kubernetes/requirements)
-
-Calico 3.10 is tested with Kubernetes versions 1.14, 1.15 and 1.16
+```
+curl https://docs.projectcalico.org/manifests/calico.yaml -O
+```
+Make changes in `calico.yaml` to use same pod cidr 
 
 ```
-export POD_CIDR=10.88.0.0/16
-curl https://docs.projectcalico.org/v3.10/manifests/calico.yaml -O
-sed -i -e "s?192.168.0.0/16?$POD_CIDR?g" calico.yaml
+sed -i 's/# - name: CALICO_IPV4POOL_CIDR/- name: CALICO_IPV4POOL_CIDR/g' calico.yaml
+sed -i 's?#   value: "192.168.0.0/16"?  value: "10.88.0.0/16"?g' calico.yaml
+
+grep -A1 CALICO_IPV4POOL_CIDR calico.yaml
+```
+
+Edit calico.yaml add IP_AUTODETECTION_METHOD for interface=eth0
+            - name: IP_AUTODETECTION_METHOD
+              value: "interface=eth0"
+            - name: CALICO_IPV4POOL_CIDR
+              value: "10.88.0.0/16"
+
+
+```
 kubectl apply -f calico.yaml
 ```
 
 Check the status of the cluster and wait for all pods to be in `Running` and `Ready 1/1` state.
 
 ```
-$ kubectl get pods -A
+kubectl get pods -A
+```
+```
 NAMESPACE     NAME                                       READY   STATUS    RESTARTS   AGE
-kube-system   calico-kube-controllers-6b64bcd855-6tdtk   1/1     Running   0          6m15s
-kube-system   calico-node-pn2pp                          1/1     Running   0          6m15s
-kube-system   coredns-5644d7b6d9-6s25d                   1/1     Running   0          23m
-kube-system   coredns-5644d7b6d9-9m5gt                   1/1     Running   0          23m
-kube-system   etcd-okd.zinox.com                         1/1     Running   0          22m
-kube-system   kube-apiserver-okd.zinox.com               1/1     Running   0          22m
-kube-system   kube-controller-manager-okd.zinox.com      1/1     Running   0          22m
-kube-system   kube-proxy-zlngl                           1/1     Running   0          23m
-kube-system   kube-scheduler-okd.zinox.com               1/1     Running   0          22m
+default       busybox                                    1/1     Running   0          10m
+kube-system   calico-kube-controllers-5554fcdcf9-nlxjq   1/1     Running   0          4m11s
+kube-system   calico-node-z7j5p                          1/1     Running   0          4m11s
+kube-system   coredns-5644d7b6d9-clklv                   1/1     Running   0          18m
+kube-system   coredns-5644d7b6d9-kv5kr                   1/1     Running   0          18m
+kube-system   etcd-ocp.zinox.com                         1/1     Running   0          17m
+kube-system   kube-apiserver-ocp.zinox.com               1/1     Running   0          17m
+kube-system   kube-controller-manager-ocp.zinox.com      1/1     Running   0          17m
+kube-system   kube-proxy-dcvvx                           1/1     Running   0          18m
+kube-system   kube-scheduler-ocp.zinox.com               1/1     Running   0          17m
 ```
 
 Our single node basic Kubernetes cluster is now up and running.
 
 ```
+kubectl get nodes -o wide
+```
+```
 $ kubectl get nodes -o wide
-NAME            STATUS   ROLES    AGE   VERSION   INTERNAL-IP    EXTERNAL-IP   OS-IMAGE                KERNEL-VERSION
-CONTAINER-RUNTIME
-okd.zinox.com   Ready    master   24m   v1.16.2   10.191.66.28   <none>        CentOS Linux 7 (Core)   3.10.0-1062.4.1.el7.x86_64
-cri-o://1.16.0
+NAME            STATUS   ROLES    AGE   VERSION   INTERNAL-IP   EXTERNAL-IP   OS-IMAGE                KERNEL-VERSION                CONTAINER-RUNTIME
+ocp.zinox.com   Ready    master   19m   v1.16.9   10.124.6.54   <none>        CentOS Linux 7 (Core)   3.10.0-1062.18.1.el7.x86_64   cri-o://1.16.6
 ```
 
 ## Create an admin account
@@ -455,137 +619,27 @@ We will use the existing VM - which already has `kubectl` and the GUI to run a b
 
 However, you can use `kubectl` from a client machine to manage the Kubernetes environment. Follow the [link](https://kubernetes.io/docs/tasks/tools/install-kubectl/) for installing `kubectl` on your chice of client machine (Windows, MacBook or Linux). 
 
-## Install busybox to check
+
+## Install helm 3.x
+
+Download latest version from https://github.com/helm/helm/releases
 
 ```
-kubectl create -f https://k8s.io/examples/admin/dns/busybox.yaml
-```
-
-## Install test service and deployment to check kube-proxy
-```
-kubectl apply -f https://raw.githubusercontent.com/servicemeshbook/consul/master/scripts/12-api-v1-deployment.yaml0
-
-sudo crictl ps | grep api
-```
-
-## Sanity check for the cluster
-
-[Check this link for testing the cluster](https://kubernetes.io/docs/tasks/debug-application-cluster/debug-service/)
-
-Check pods
-```
-$ kubectl get pods
-NAME                     READY   STATUS    RESTARTS   AGE
-api-v1-f9b675d9d-x6ktq   1/1     Running   0          103s
-busybox                  1/1     Running   0          4m43s
-```
-
-Scale api-v1 deployment
-```
-kubectl scale deploy api-v1 --replicas=3
-```
-
-Find out the IP address of the `api-v1` service and repeat curl and check if L4 routing is taking place or not. Check the pod name and it should be different on each curl.
-```
-API_IP=$(kubectl get svc api-v1 -o jsonpath='{.spec.clusterIP}') ; echo $API_IP
-
-curl $API_IP:8080
-curl $API_IP:8080
-curl $API_IP:8080
-curl $API_IP:8080
-```
-
-## Install helm and tiller 
-
-Starting with Helm 3, the tiller will not be required. However, we will be installing Helm v2.15.2
-
-In principle tiller can be installed using `helm init`.
-
-```
-VERSION="v2.15.2"
-curl -s https://storage.googleapis.com/kubernetes-helm/helm-${VERSION}-linux-amd64.tar.gz | tar xz
-
+version=v3.2.0-rc.1
+curl -s https://get.helm.sh/helm-v3.2.0-rc.1-linux-amd64.tar.gz | tar xz
 sudo mv linux-amd64/helm /bin
 rm -fr linux-amd64
+
+helm repo add stable https://kubernetes-charts.storage.googleapis.com
+helm repo update
+helm repo list
 ```
 
-Create `tiller` service accoun and grant cluster admin to the `tiller` service account.
-
 ```
-kubectl -n kube-system create serviceaccount tiller
-
-kubectl create clusterrolebinding tiller --clusterrole cluster-admin --serviceaccount=kube-system:tiller
+$ helm version
 ```
-Helm can be installed with and without security. If no security is required (like demo/test environment), follow Option - 1 or follow option - 2 to install helm with security.
-
-### Option - 1 : No security, ideal for running in a sandbox environment.
-
-Initialize the `helm` and it will install `tiller` server in Kubernetes.
-
 ```
-helm init --service-account tiller
-```
-
-Check helm version
-
-```
-helm version --short
-
-Client: v2.15.2+g8dce272
-Server: v2.15.2+g8dce272
-```
-
-If you installed helm without secruity, skip to the [next](#Install-Kubernetes-dashboard) section.
-
-### Option - 2 : With TLS security, ideal for running in production.
-
-Install step
-
-```
-$ curl -LOs https://github.com/smallstep/cli/releases/download/v0.10.1/step_0.10.1_linux_amd64.tar.gz
-
-$ tar xvfz step_0.10.1_linux_amd64.tar.gz
-
-$ sudo mv step_0.10.1/bin/step /bin
-
-$ mkdir -p ~/helm
-$ cd ~/helm
-$ step certificate create --profile root-ca "My iHelm Root CA" root-ca.crt root-ca.key
-$ step certificate create intermediate.io inter.crt inter.key --profile intermediate-ca --ca ./root-ca.crt --ca-key ./root-ca.key
-$ step certificate create helm.io helm.crt helm.key --profile leaf --ca inter.crt --ca-key inter.key --no-password --insecure --not-after 17520h
-$ step certificate bundle root-ca.crt inter.crt ca-chain.crt
-
-$ helm init \
---override 'spec.template.spec.containers[0].command'='{/tiller,--storage=secret}' \
---tiller-tls --tiller-tls-verify \
---tiller-tls-cert=./helm.crt \
---tiller-tls-key=./helm.key \
---tls-ca-cert=./ca-chain.crt \
---service-account=tiller
-
-$ cd ~/.helm
-$ cp ~/helm/helm.crt cert.pem
-$ cp ~/helm/helm.key key.pem
-$ rm -fr ~/helm ## Copy dir somewhere and protect it.
-```
-
-## Update helm repository
-
-Update Helm repo
-
-```
-$ helm repo update
-```
-
-If secure helm is used, use --tls at the end of helm commands to use TLS between helm and server.
-
-List Helm repo
-
-```
-$ helm repo list
-NAME  	URL                                             
-stable	https://kubernetes-charts.storage.googleapis.com
-local 	http://127.0.0.1:8879/charts   
+version.BuildInfo{Version:"v3.2.0-rc.1", GitCommit:"7bffac813db894e06d17bac91d14ea819b5c2310", GitTreeState:"clean", GoVersion:"go1.13.10"}
 ```
 
 ## Install Kubernetes dashboard
@@ -593,49 +647,46 @@ local 	http://127.0.0.1:8879/charts
 Install kubernetes dashboard helm chart
 
 ```
-helm install stable/kubernetes-dashboard --name k8web --namespace kube-system --set fullnameOverride="dashboard"
-
-Note: add --tls above if using secure helm
+helm install k8web --namespace kube-system --set fullnameOverride="dashboard" stable/kubernetes-dashboard 
 ```
 
 ```
-$ kubectl get pods -n kube-system
-NAME                                       READY   STATUS    RESTARTS   AGE
-calico-kube-controllers-6b64bcd855-6tdtk   1/1     Running   0          28m
-calico-node-pn2pp                          1/1     Running   0          28m
-coredns-5644d7b6d9-6s25d                   1/1     Running   0          45m
-coredns-5644d7b6d9-9m5gt                   1/1     Running   0          45m
-dashboard-7ddc4c9d66-4nhcd                 1/1     Running   0          16s
-etcd-okd.zinox.com                         1/1     Running   0          44m
-kube-apiserver-okd.zinox.com               1/1     Running   0          44m
-kube-controller-manager-okd.zinox.com      1/1     Running   0          44m
-kube-proxy-zlngl                           1/1     Running   0          45m
-kube-scheduler-okd.zinox.com               1/1     Running   0          44m
-tiller-deploy-684c9f98f5-srxrw             1/1     Running   0          72s
+$ helm ls -A
+NAME 	NAMESPACE  	REVISION	UPDATED                                	STATUS  	CHART                      	APP VERSION
+k8web	kube-system	1       	2020-04-20 08:34:44.735432602 -0500 CDT	deployed	kubernetes-dashboard-1.10.1	1.10.1
 ```
 
-Check helm charts that we deployed
-
 ```
-$ helm list
-NAME    REVISION        UPDATED                         ---
-k8web   1               Mon Sep 30 22:21:01 2019        ---
+kubectl get pods -A
+```
+```
+NAMESPACE     NAME                                       READY   STATUS    RESTARTS   AGE
+default       busybox                                    1/1     Running   0          17m
+kube-system   calico-kube-controllers-5554fcdcf9-nlxjq   1/1     Running   0          11m
+kube-system   calico-node-z7j5p                          1/1     Running   0          11m
+kube-system   coredns-5644d7b6d9-clklv                   1/1     Running   0          25m
+kube-system   coredns-5644d7b6d9-kv5kr                   1/1     Running   0          25m
+kube-system   dashboard-7ddc4c9d66-p8rp6                 1/1     Running   0          41s
+kube-system   etcd-ocp.zinox.com                         1/1     Running   0          24m
+kube-system   kube-apiserver-ocp.zinox.com               1/1     Running   0          24m
+kube-system   kube-controller-manager-ocp.zinox.com      1/1     Running   0          24m
+kube-system   kube-proxy-dcvvx                           1/1     Running   0          25m
+kube-system   kube-scheduler-ocp.zinox.com               1/1     Running   0          24m```
 
---- STATUS          CHART                           APP VERSION     NAMESPACE
---- DEPLOYED        kubernetes-dashboard-1.10.0     1.10.1          kube-system
 ```
 
 Check service names for the dashboard
 
 ```
-$ $ kubectl get svc -n kube-system
-NAME            TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)                  AGE
-dashboard       ClusterIP   10.98.217.60   <none>        443/TCP                  53s
-kube-dns        ClusterIP   10.96.0.10     <none>        53/UDP,53/TCP,9153/TCP   46m
-tiller-deploy   ClusterIP   10.97.34.17    <none>        44134/TCP                109s
+kubectl get svc -n kube-system
+```
+```
+NAME        TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)                  AGE
+dashboard   ClusterIP   10.108.222.47   <none>        443/TCP                  106s
+kube-dns    ClusterIP   10.96.0.10      <none>        53/UDP,53/TCP,9153/TCP   26m
 ```
 
-We will patch the dashboard service from CluserIP to NodePort so that we could run the dashboard using the node IP address.
+We can patch the dashboard service from CluserIP to NodePort so that we could run the dashboard using the node IP address.
 
 ```
 kubectl -n kube-system patch svc dashboard --type='json' -p '[{"op":"replace","path":"/spec/type","value":"NodePort"}]'
@@ -733,17 +784,194 @@ You have Kubernetes 1.15.5 single node environment ready for you now.
 
 The following are optional and are not recommended. Skip to [this](#power-down-vm).
 
-## Check if kube-prxy is OK. There must be two entries for the hostnames
+## Install bare metal load balancer
+
+Generally AWS and GCE runs their load balancer type that can provide external IP addresses for services.
+
+We can run bare metal load balancer in our setup to get external IP addresses mapped to services.
+
+We can also run `keepalived` but let's try with bare metal load balancer - see link https://metallb.universe.tf/installation/
+
+Edit kube-proxy config map and set strictARP: true
+```
+kubectl edit configmap -n kube-system kube-proxy
+```
+
+Install metallb - Optional
 
 ```
-sudo iptables-save | grep hostnames
-
--A KUBE-SERVICES ! -s 10.142.0.0/16 -d 10.98.229.90/32 -p tcp -m comment --comment "default/hostnames: cluster IP" -m tcp --dport 80 -j KUBE-MARK-MASQ
--A KUBE-SERVICES -d 10.98.229.90/32 -p tcp -m comment --comment "default/hostnames: cluster IP" -m tcp --dport 80 -j KUBE-SVC-NWV5X2332I4OT4T3
-[vikram@istio04 ~]$ sudo iptables-save | grep hostnames
--A KUBE-SERVICES ! -s 10.142.0.0/16 -d 10.98.229.90/32 -p tcp -m comment --comment "default/hostnames: cluster IP" -m tcp --dport 80 -j KUBE-MARK-MASQ
--A KUBE-SERVICES -d 10.98.229.90/32 -p tcp -m comment --comment "default/hostnames: cluster IP" -m tcp --dport 80 -j KUBE-SVC-NWV5X2332I4OT4T3
+kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.9.3/manifests/namespace.yaml
+kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.9.3/manifests/metallb.yaml
+# On first install only
+kubectl create secret generic -n metallb-system memberlist --from-literal=secretkey="$(openssl rand -base64 128)"
 ```
+
+Check pods
+
+```
+kubectl get pods -n metallb-system
+```
+```
+NAME                          READY   STATUS    RESTARTS   AGE
+controller-5c9894b5cd-dzch5   1/1     Running   0          35s
+speaker-5m5zs                 1/1     Running   0          35s
+```
+
+The installation manifest does not include a configuration file. MetalLB’s components will still start, but will remain idle until you define and deploy a configmap. The memberlist secret contains the secretkey to encrypt the communication between speakers for the fast dead node detection.
+
+Layer-2 configuration
+
+```
+cat << 'EOF' > metallb-config.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  namespace: metallb-system
+  name: config
+data:
+  config: |
+    address-pools:
+    - name: default
+      protocol: layer2
+      addresses:
+      - xxx.xx.7.212-xxx.xx.7.215
+EOF  
+```
+
+In above, xxx.xx.7.212-xxx.xx.7.215 is a pool of 4 IP addresses that I configured in my IBM Cloud account and assigned them to the VM that I am using.
+
+```
+kubectl apply -f metallb-config.yaml
+```
+
+## Install nxinx controller - optional
+
+Install nginx controller
+
+```
+helm repo add nginx-stable https://helm.nginx.com/stable
+
+helm repo update
+
+helm install nginx --namespace kube-system --set fullnameOverride=nginx --set controller.name=nginx-controller --set controller.config.name=nginx-config --set controller.service.name=nginx-controller --set controller.serviceAccount.name=nginx nginx-stable/nginx-ingress
+```
+
+```
+$ helm ls -A
+NAME   	NAMESPACE  	REVISION	UPDATED                                	STATUS  	CHART                      	APP VERSION
+k8web  	kube-system	1       	2020-04-20 08:34:44.735432602 -0500 CDT	deployed	kubernetes-dashboard-1.10.1	1.10.1
+metrics	kube-system	1       	2020-04-20 08:40:31.234522129 -0500 CDT	deployed	metrics-server-2.11.1      	0.3.6
+nginx  	kube-system	1       	2020-04-20 09:38:15.324875762 -0500 CDT	deployed	nginx-ingress-0.4.3        	1.6.3
+```
+
+Check external IP address assigned to the nginx-controller by the metallb.
+
+```
+$ kubectl -n kube-system get svc nginx-controller
+NAME               TYPE           CLUSTER-IP       EXTERNAL-IP    PORT(S)                      AGE
+nginx-controller   LoadBalancer   10.106.220.204   xxx.xx.7.212   80:30366/TCP,443:32739/TCP   87m
+```
+
+The first IP address from the pool of 4 is assigned to the nginx-controller.
+
+## Test web deployments using external IP addresses
+
+Reference article: https://medium.com/velotio-perspectives/a-primer-on-http-load-balancing-in-kubernetes-using-ingress-on-google-cloud-platform-d45108f90ff1
+
+Create deployment
+
+```
+kubectl run nginx --image=nginx --port=80
+kubectl run echoserver --image=gcr.io/google_containers/echoserver:1.4 --port=8080
+```
+
+Create service with type as load balancer
+
+```
+kubectl expose deployment nginx --target-port=80  --type=LoadBalancer
+kubectl expose deployment echoserver --target-port=8080 --type=LoadBalancer
+```
+
+Check external IPs assigned to the services
+
+```
+kubectl get svc
+```
+```
+NAME         TYPE           CLUSTER-IP      EXTERNAL-IP    PORT(S)          AGE
+echoserver   LoadBalancer   10.100.232.52   xxx.xx.7.214   8080:31173/TCP   2m4s
+kubernetes   ClusterIP      10.96.0.1       <none>         443/TCP          3h7m
+nginx        LoadBalancer   10.103.114.48   xxx.xx.7.213   80:31427/TCP     5m16s
+```
+
+Test services
+
+You can test services http://xxx.xx.7.213 which should show the nginx default page and http://xxx.xx.7.214:8080 should show the http headers.
+
+Creating each service as an external load balancer can be quite expensive as each one requires a separate external IP address to map to.
+
+We can use an nginx controller through which all requests are passed and then use host name A records to point to the same nginx controller external IP address - just like virtual hosting.
+
+Revert back both services to use Node Port instead of load balancer.
+
+```
+kubectl edit svc nginx
+kubectl edit svc echoserver
+```
+
+And change LoadBalancer to NodePort. Check service and notice that the external IP address is removed.
+
+```
+$ kubectl get svc
+NAME         TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)          AGE
+echoserver   NodePort    10.100.232.52   <none>        8080:31173/TCP   39m
+kubernetes   ClusterIP   10.96.0.1       <none>        443/TCP          3h44m
+nginx        NodePort    10.103.114.48   <none>        80:31427/TCP     42m
+```
+
+### Create an ingress rule to route traffic.
+
+```
+cat << 'EOT' > ingress.yaml
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+ name: simple-ingress
+spec:
+ rules:
+ - host: host1.ibm.local
+   http:
+     paths:
+     - path: /
+       backend:
+         serviceName: nginx
+         servicePort: 80
+     - path: /echo
+       backend:
+         serviceName: echoserver
+         servicePort: 8080
+EOT
+```
+
+```
+kubectl apply -f ingress.yaml
+```
+
+```
+kubectl get ing
+```
+```
+NAME             HOSTS             ADDRESS        PORTS   AGE
+simple-ingress   host1.ibm.local   xxx.xx.7.212   80      38m
+```
+
+Test ingress
+
+```
+curl -H 'HOST:host1.ibm.local' http://xxx.xx.7.212
+```
+
+We must create DNA A record for xxx.xx.7.212 to a name so that we can access it using a name. 
 
 
 ## Install Metrics server (Optional)
@@ -751,7 +979,14 @@ sudo iptables-save | grep hostnames
 Metrics server is required if we need to run `kubectl top` commands to show the metrics.
 
 ```
-helm install stable/metrics-server --name metrics --namespace kube-system --set fullnameOverride="metrics" --set args="{--logtostderr,--kubelet-insecure-tls,--kubelet-preferred-address-types=InternalIP\,ExternalIP\,Hostname}"
+helm install metrics --namespace kube-system --set fullnameOverride="metrics" --set args="{--logtostderr,--kubelet-insecure-tls,--kubelet-preferred-address-types=InternalIP\,ExternalIP\,Hostname}" stable/metrics-server
+```
+
+```
+$ helm ls -A
+NAME   	NAMESPACE  	REVISION	UPDATED                                	STATUS  	CHART                      	APP VERSION
+k8web  	kube-system	1       	2020-04-20 08:34:44.735432602 -0500 CDT	deployed	kubernetes-dashboard-1.10.1	1.10.1
+metrics	kube-system	1       	2020-04-20 08:40:31.234522129 -0500 CDT	deployed	metrics-server-2.11.1      	0.3.6
 ```
 
 Make sure that the `v1beta1.metrics.k8s.io` service is available
@@ -770,6 +1005,12 @@ kubectl get --raw "/apis/metrics.k8s.io/v1beta1/nodes"
 ```
 Wait for few minutes, `kubectl top nodes` and `kubectl top pods -A` should show output.
 
+```
+$ kubectl top nodes
+NAME            CPU(cores)   CPU%   MEMORY(bytes)   MEMORY%
+ocp.zinox.com   212m         5%     3787Mi          49%
+```
+
 
 ## Install VMware Octant (Optional)
 
@@ -782,70 +1023,66 @@ You can install `Octant` on your Windows, MacBook, Linux and it is a simple to u
 This is optional if we do not have enough resources in the VM to deploy additional charts. 
 
 ```
-helm install stable/prometheus-operator --namespace monitoring --name mon
+kubectl create ns monitoring
+helm install mon --namespace monitoring stable/prometheus-operator 
+```
 
-Note: add --tls above if using secure helm
+```
+$ helm ls -A
+NAME   	NAMESPACE  	REVISION	UPDATED                                	STATUS  	CHART                      	APP VERSION
+k8web  	kube-system	1       	2020-04-20 08:34:44.735432602 -0500 CDT	deployed	kubernetes-dashboard-1.10.1	1.10.1
+metrics	kube-system	1       	2020-04-20 08:40:31.234522129 -0500 CDT	deployed	metrics-server-2.11.1      	0.3.6
+mon    	monitoring 	1       	2020-04-20 08:43:24.909514311 -0500 CDT	deployed	prometheus-operator-8.13.0 	0.38.1
 ```
 
 Check monitoring pods
 
 ```
-$ kubectl -n monitoring get pods
-NAME                                     READY   STATUS    RESTARTS   AGE
-alertmanager-mon-alertmanager-0          2/2     Running   0          28s
-mon-grafana-75954bf666-jgnkd             2/2     Running   0          33s
-mon-kube-state-metrics-ff5d6c45b-s68np   1/1     Running   0          33s
-mon-operator-6b95cf776f-tqdp8            1/1     Running   0          33s
-mon-prometheus-node-exporter-9mdhr       1/1     Running   0          33s
-prometheus-mon-prometheus-0              3/3     Running   1          18s
+kubectl -n monitoring get pods
+```
+```
+NAME                                                  READY   STATUS    RESTARTS   AGE
+alertmanager-mon-prometheus-operator-alertmanager-0   2/2     Running   0          35s
+mon-grafana-6fd5774d94-wjk54                          2/2     Running   0          56s
+mon-kube-state-metrics-6466bfc5c6-x7gt2               1/1     Running   0          56s
+mon-prometheus-node-exporter-nf5cd                    1/1     Running   0          56s
+mon-prometheus-operator-operator-b6cfd685d-7szth      2/2     Running   0          56s
+prometheus-mon-prometheus-operator-prometheus-0       2/3     Running   1          25s             3/3     Running   1          18s
 ```
 
 Check Services
 
 ```
-$ kubectl -n monitoring get svc
-NAME                                   TYPE        CLUSTER-IP       EXTERNAL-IP   --- 
-alertmanager-operated                  ClusterIP   None             <none>        --- 
-mon-grafana                            ClusterIP   10.98.241.51     <none>        --- 
-mon-kube-state-metrics                 ClusterIP   10.111.186.181   <none>        --- 
-mon-prometheus-node-exporter           ClusterIP   10.108.189.227   <none>        --- 
-mon-prometheus-operator-alertmanager   ClusterIP   10.106.154.135   <none>        --- 
-mon-prometheus-operator-operator       ClusterIP   10.110.132.10    <none>        --- 
-mon-prometheus-operator-prometheus     ClusterIP   10.106.118.107   <none>        --- 
-prometheus-operated                    ClusterIP   None             <none>        --- 
-
---- PORT(S)             AGE
---- 9093/TCP,6783/TCP   19s
---- 80/TCP              23s
---- 8080/TCP            23s
---- 9100/TCP            23s
---- 9093/TCP            23s
---- 8080/TCP            23s
---- 9090/TCP            23s
---- 9090/TCP            9s
+kubectl -n monitoring get svc
 ```
-
-The grafana UI can be opened using: `http://10.98.241.51` for service `mon-grafana`. The IP address will be different in your case.
+```
+$ kubectl -n monitoring get svc
+NAME                                   TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)                      AGE
+alertmanager-operated                  ClusterIP   None             <none>        9093/TCP,9094/TCP,9094/UDP   104s
+mon-grafana                            ClusterIP   10.111.123.243   <none>        80/TCP                       2m5s
+mon-kube-state-metrics                 ClusterIP   10.105.101.58    <none>        8080/TCP                     2m5s
+mon-prometheus-node-exporter           ClusterIP   10.103.56.195    <none>        9100/TCP                     2m5s
+mon-prometheus-operator-alertmanager   ClusterIP   10.96.62.70      <none>        9093/TCP                     2m5s
+mon-prometheus-operator-operator       ClusterIP   10.97.75.86      <none>        8080/TCP,443/TCP             2m5s
+mon-prometheus-operator-prometheus     ClusterIP   10.97.233.227    <none>        9090/TCP                     2m5s
+prometheus-operated                    ClusterIP   None             <none>        9090/TCP                     94s
+```
 
 A node port can also be configured for the `mon-grafana` to use the local IP address of the VM instead of using cluster IP address.
 
 ```
-# kubectl get svc -n monitoring mon-grafana
-NAME          TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)   AGE
-mon-grafana   ClusterIP   10.105.49.113   <none>        80/TCP    95s
+kubectl get svc -n monitoring mon-grafana
+```
+```
+NAME          TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)   AGE
+mon-grafana   ClusterIP   10.111.123.243   <none>        80/TCP    2m59s
 ```
 
 Edit the service by running `kubectl edit svc -n monitoring mon-grafana` and change `type` from `ClusterIP` to `NodePort`.
 
-Find out the `NodePort` for the `mon-grafana` service.
+Find out the `NodePort` for the `mon-grafana` service by running `kubectl get svc -n monitoring mon-grafana`
 
-```
-# kubectl get svc -n monitoring mon-grafana
-NAME          TYPE       CLUSTER-IP      EXTERNAL-IP   PORT(S)        AGE
-mon-grafana   NodePort   10.105.49.113   <none>        80:32620/TCP   3m15s
-```
-
-The grafana UI can be opened through http://localhost:32620 and this node port will be different in your case.
+The grafana UI can be opened through http://localhost:<nodeportNumber> and this node port will be different in your case.
 
 The default user id is `admin` and the password is `prom-operator`. This can be seen through `kubectl -n monitoring get secret mon-grafana -o yaml` and then run `base64 -d` againgst the encoded value for `admin-user` and `admin-password` secret.
 
@@ -865,19 +1102,19 @@ Open `http://localhost:9090` to open the Prometheus UI and `http://localhost:909
 If you need to free-up resources from the VM, delete prometheus using the following clean-up procedure.
 
 ```
-helm delete mon --purge
-helm delete ns monitoring
+helm uninstall mon -n monitoring
 kubectl -n kube-system delete crd \
            alertmanagers.monitoring.coreos.com \
            podmonitors.monitoring.coreos.com \
            prometheuses.monitoring.coreos.com \
            prometheusrules.monitoring.coreos.com \
-           servicemonitors.monitoring.coreos.com
-
-Note: add --tls above if using secure helm
+           servicemonitors.monitoring.coreos.com \
+           thanosrulers.monitoring.coreos.com
 ```
 
-## Uninstall Kubernetes and Docker
+## Uninstall Kubernetes and crio
+
+Run as root
 
 In case Kuberenetes needs to be uninstalled.
 
@@ -908,6 +1145,8 @@ for dir in $cleanupdirs; do
   echo "Removing $dir"
   rm -rf $dir
 done
+
+ip link delete cni0
 ```
 
 ## Power down VM
@@ -915,22 +1154,6 @@ done
 Click `Player` > `Power` > `Shutdown Guest`.
 
  It is highly recommended that you take a backup of the directory after installing Kubernetes environment. You can restore the VM from the backup to start again, should you need it.
-
-The files in the directory may show as:
-
-The output shown using `git bash` running in Windows.
-
-```
-$ ls -lh
-total 7.3G
--rw-r--r-- 1 vikram 197609 2.1G Jul 21 09:44 dockerbackend.vmdk
--rw-r--r-- 1 vikram 197609 8.5K Jul 21 09:44 kube01.nvram
--rw-r--r-- 1 vikram 197609    0 Jul 20 16:34 kube01.vmsd
--rw-r--r-- 1 vikram 197609 3.5K Jul 21 09:44 kube01.vmx
--rw-r--r-- 1 vikram 197609  261 Jul 21 08:58 kube01.vmxf
--rw-r--r-- 1 vikram 197609 5.2G Jul 21 09:44 osdisk.vmdk
--rw-r--r-- 1 vikram 197609 277K Jul 21 09:44 vmware.log
-```
 
 Copy above directory to your backup drive for use it later.
 
@@ -943,6 +1166,4 @@ Open `Terminal` and run `kubectl get pods -A` and wait for all pods to be ready 
 ## Conclusion
 
 This is a pretty basic Kubernetes cluster just by using a single VM - which is good for learning purposes. In reality, we should use a Kubernetes distribution built by a provider such as RedHat OpenShift or IBM Cloud Private or use public cloud provider such as AWS, GKE, Azure or many others.
-
-## Ascinema Cast
 
